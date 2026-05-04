@@ -3,6 +3,7 @@ import type { Plan } from '../engine/types';
 import { generatePlans } from '../engine/plan';
 import { scorePlan } from '../engine/scoring';
 import { DEFAULT_WEIGHTS, optimizeColourOrder, type OptimalWeights } from '../engine/optimal';
+import { planAsPrimitives, describePrimitive, type Primitive } from '../engine/primitives';
 import { getGroundTruth } from '../storage/storage';
 import { getCanonicalGroundTruth } from '../patterns/groundTruths';
 import { cellSize, clearCanvas, drawGridLines, drawPatternBackground } from './canvasUtil';
@@ -37,8 +38,16 @@ export default function PlanTab({ state }: Props) {
   const [maxAxisJump, setMaxAxisJump] = useState<number>(6);
   const [autoColourOrder, setAutoColourOrder] = useState(true);
 
-  // Build the displayed list: ground truth first (if any) then engine plans
-  const plans: Plan[] = useMemo(() => {
+  // Build the displayed list: ground truth first (if any) then engine plans.
+  // Plans are augmented with optional `primitives` + `stepToPrimitive`
+  // for the human-readable instruction view; engine-generated plans
+  // don't have those, only the dedicated "Primitive plan" entry does.
+  type AugPlan = Plan & {
+    primitives?: Primitive[];
+    /** stepToPrimitive[i] = index into `primitives` for step `i`, or -1. */
+    stepToPrimitive?: number[];
+  };
+  const plans: AugPlan[] = useMemo(() => {
     const colorOrder = autoColourOrder ? optimizeColourOrder(pattern) : undefined;
     const enginePlans = generatePlans(pattern, weights, {
       mergeRegions,
@@ -47,6 +56,28 @@ export default function PlanTab({ state }: Props) {
       maxAxisJump: maxAxisJump || undefined,
       colorOrder,
     });
+
+    // Build the primitive plan (separate from the optimal solver — it
+    // uses a decomposition heuristic, not CPP). The user reads this as
+    // a list of named instructions instead of a list of corner-to-corner
+    // steps, eliminating per-step counting fatigue.
+    let primitivePlan: AugPlan | null = null;
+    try {
+      const pp = planAsPrimitives(pattern, {
+        maxAxisJump: maxAxisJump || undefined,
+      });
+      if (pp.steps.length > 0) {
+        primitivePlan = {
+          label: 'Primitive plan (instructions)',
+          steps: pp.steps,
+          score: scorePlan(pp.steps, weights),
+          primitives: pp.primitives,
+          stepToPrimitive: pp.stepToPrimitive,
+        };
+      }
+    } catch (e) {
+      console.warn('planAsPrimitives failed:', e);
+    }
     let gt: Plan | null = null;
     if (patternKey) {
       const userGt = getGroundTruth(patternKey);
@@ -69,7 +100,11 @@ export default function PlanTab({ state }: Props) {
         }
       }
     }
-    return gt ? [gt, ...enginePlans] : enginePlans;
+    const ordered: AugPlan[] = [];
+    if (gt) ordered.push(gt);
+    if (primitivePlan) ordered.push(primitivePlan);
+    ordered.push(...enginePlans);
+    return ordered;
   }, [pattern, patternKey, weights, mergeRegions, maxThreads, maxMergeDistance, maxAxisJump, autoColourOrder]);
 
   const groundTruth = plans[0]?.isGroundTruth ? plans[0] : null;
@@ -243,8 +278,15 @@ export default function PlanTab({ state }: Props) {
     );
   }
 
+  // When viewing the primitive plan, swap the per-step action text with
+  // the primitive description so the user reads instructions, not steps.
   const actionText = (() => {
     if (!activePlan || step <= 0 || step > activePlan.steps.length) return '—';
+    if (activePlan.primitives && activePlan.stepToPrimitive) {
+      const pi = activePlan.stepToPrimitive[step - 1];
+      const prim = pi >= 0 ? activePlan.primitives[pi] : null;
+      if (prim) return describePrimitive(prim);
+    }
     const s = activePlan.steps[step - 1];
     if (!s) return '—';
     if (s.kind === 'start') return 'Knot & start';
@@ -257,6 +299,18 @@ export default function PlanTab({ state }: Props) {
     }
     return '—';
   })();
+
+  // Active primitive index (when on the primitive plan) for the
+  // "primitive X of N" stat.
+  const activePrimitiveIdx = (() => {
+    if (!activePlan?.stepToPrimitive || step <= 0) return -1;
+    const i = step - 1;
+    if (i < 0 || i >= activePlan.stepToPrimitive.length) return -1;
+    return activePlan.stepToPrimitive[i];
+  })();
+  const totalPrimitives = activePlan?.primitives
+    ? activePlan.primitives.filter((p) => p.kind !== 'restart').length
+    : 0;
 
   return (
     <div>
@@ -627,6 +681,16 @@ export default function PlanTab({ state }: Props) {
                 {activeThread >= 0 ? `${activeThread + 1} / ${totalThreads}` : `– / ${totalThreads}`}
               </div>
             </div>
+            {totalPrimitives > 0 && (
+              <div className="stat" style={{ marginTop: 8 }}>
+                <div className="stat-label">Primitive</div>
+                <div className="stat-val">
+                  {activePrimitiveIdx >= 0
+                    ? `${activePrimitiveIdx + 1} / ${activePlan?.primitives?.length ?? 0}`
+                    : `– / ${activePlan?.primitives?.length ?? 0}`}
+                </div>
+              </div>
+            )}
             <div className="stat" style={{ marginTop: 8 }}>
               <div className="stat-label">Action</div>
               <div className="stat-val" style={{ fontSize: 13 }}>
