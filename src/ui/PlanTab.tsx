@@ -4,7 +4,6 @@ import { generatePlans } from '../engine/plan';
 import { scorePlan } from '../engine/scoring';
 import { DEFAULT_WEIGHTS, optimizeColourOrder, type OptimalWeights } from '../engine/optimal';
 import { planAsPrimitives, describePrimitive, type Primitive } from '../engine/primitives';
-import { getAgentPlans } from '../patterns/agentPlans';
 import { getGroundTruth } from '../storage/storage';
 import { getCanonicalGroundTruth } from '../patterns/groundTruths';
 import { cellSize, clearCanvas, drawGridLines, drawPatternBackground } from './canvasUtil';
@@ -101,22 +100,9 @@ export default function PlanTab({ state }: Props) {
         }
       }
     }
-    // Agent-submitted plans (JSON fixtures keyed by patternKey). Display
-    // alongside the engine plans so we can compare the agent's output
-    // visually with the planner's. Surface only when the loaded pattern
-    // matches the fixture's patternKey.
-    const agentPlans: AugPlan[] = getAgentPlans(patternKey ?? null).map((ap) => ({
-      label: ap.label,
-      steps: ap.steps,
-      score: scorePlan(ap.steps, weights),
-      primitives: ap.primitives,
-      stepToPrimitive: ap.stepToPrimitive,
-    }));
-
     const ordered: AugPlan[] = [];
     if (gt) ordered.push(gt);
     if (primitivePlan) ordered.push(primitivePlan);
-    ordered.push(...agentPlans);
     ordered.push(...enginePlans);
     return ordered;
   }, [pattern, patternKey, weights, mergeRegions, maxThreads, maxMergeDistance, maxAxisJump, autoColourOrder]);
