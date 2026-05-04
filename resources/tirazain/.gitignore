@@ -1,0 +1,6 @@
+# Imported pattern files are large and per-user; only the manifest +
+# README are tracked in source control.
+*/
+!*.md
+!*.json
+!.gitignore

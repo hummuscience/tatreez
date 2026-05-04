@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Local dev artefacts
+.DS_Store
+.vscode/
+.idea/
+*.log
+
+# Resources are scratch/fixtures, not part of the shipped app.
+# Tracked exceptions: the tirazain manifest, README, and gitignore (the
+# only files needed to re-run the import pipeline). Everything else —
+# raw OXS/DST/PES/PCS files, large reference PDFs, sample webp/png
+# images — stays out of the repo. Third-party copyrighted material
+# should not be redistributed in a public repo without permission.
+resources/**
+!resources/tirazain/
+!resources/tirazain/manifest.json
+!resources/tirazain/README.md
+!resources/tirazain/.gitignore
+
+# Test scratch + caches
+.cache/
+coverage/
+.vite/
+.playwright-mcp/
+.test-images/
+
+# Loose debug screenshots in the project root (kept local, not committed).
+# Pattern thumbnails inside resources/tirazain/<slug>/ are already covered
+# by the tirazain rule above.
+/*.png
+
+# Hand-off scratch space from earlier sessions
+handoff/
