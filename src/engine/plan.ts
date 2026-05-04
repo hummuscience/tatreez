@@ -14,7 +14,7 @@ export function generatePlans(
   weights: OptimalWeights = DEFAULT_WEIGHTS,
   solveOptions: Pick<
     SolveOptions,
-    'mergeRegions' | 'maxThreads' | 'maxMergeDistance' | 'colorOrder'
+    'mergeRegions' | 'maxThreads' | 'maxMergeDistance' | 'maxAxisJump' | 'colorOrder'
   > = {},
 ): Plan[] {
   const regions = extractRegions(pattern);
@@ -51,6 +51,7 @@ export function generatePlans(
     mergeRegions: solveOptions.mergeRegions,
     maxThreads: solveOptions.maxThreads,
     maxMergeDistance: solveOptions.maxMergeDistance,
+    maxAxisJump: solveOptions.maxAxisJump,
     colorOrder: solveOptions.colorOrder,
   });
   const optimalPlan: Plan = {

@@ -46,6 +46,9 @@ export function pairwiseBackPaths(
       for (let dx = -1; dx <= 1; dx++) {
         for (let dy = -1; dy <= 1; dy++) {
           if (dx === 0 && dy === 0) continue;
+          // Hard rule when forbidDiagonalBack: skip diagonal neighbours
+          // entirely. Back-paths become pure Manhattan routes.
+          if (weights.forbidDiagonalBack && dx !== 0 && dy !== 0) continue;
           const nx = top.x + dx;
           const ny = top.y + dy;
           if (nx < 0 || ny < 0 || nx > W || ny > H) continue;
@@ -124,6 +127,9 @@ export function pairwiseBackDistances(
       for (let dx = -1; dx <= 1; dx++) {
         for (let dy = -1; dy <= 1; dy++) {
           if (dx === 0 && dy === 0) continue;
+          // Hard rule when forbidDiagonalBack: skip diagonal neighbours
+          // entirely. Back-paths become pure Manhattan routes.
+          if (weights.forbidDiagonalBack && dx !== 0 && dy !== 0) continue;
           const nx = top.x + dx;
           const ny = top.y + dy;
           if (nx < 0 || ny < 0 || nx > W || ny > H) continue;

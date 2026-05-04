@@ -30,6 +30,11 @@ export default function PlanTab({ state }: Props) {
   // back-distance the solver will pay to merge two same-colour regions
   // into one thread. Prevents long diagonal slashes across the chart.
   const [maxMergeDistance, setMaxMergeDistance] = useState<number>(8);
+  // 0 = unlimited. >0 caps the longest axis-aligned back hop. Stops the
+  // "wandering needle" pattern where a thread travels 20+ cells along a
+  // column before reaching the next stitch — practical limit for keeping
+  // the path easy to follow.
+  const [maxAxisJump, setMaxAxisJump] = useState<number>(6);
   const [autoColourOrder, setAutoColourOrder] = useState(true);
 
   // Build the displayed list: ground truth first (if any) then engine plans
@@ -39,6 +44,7 @@ export default function PlanTab({ state }: Props) {
       mergeRegions,
       maxThreads: maxThreads || undefined,
       maxMergeDistance: maxMergeDistance || undefined,
+      maxAxisJump: maxAxisJump || undefined,
       colorOrder,
     });
     let gt: Plan | null = null;
@@ -64,7 +70,7 @@ export default function PlanTab({ state }: Props) {
       }
     }
     return gt ? [gt, ...enginePlans] : enginePlans;
-  }, [pattern, patternKey, weights, mergeRegions, maxThreads, maxMergeDistance, autoColourOrder]);
+  }, [pattern, patternKey, weights, mergeRegions, maxThreads, maxMergeDistance, maxAxisJump, autoColourOrder]);
 
   const groundTruth = plans[0]?.isGroundTruth ? plans[0] : null;
   const activePlan = plans[activePlanIdx] ?? null;
@@ -393,10 +399,53 @@ export default function PlanTab({ state }: Props) {
           </button>
         </div>
 
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            margin: '0 0 12px',
+            padding: '8px 10px',
+            background: 'var(--bg-soft)',
+            borderRadius: 6,
+            flexWrap: 'wrap',
+          }}
+        >
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <strong>Max axis jump:</strong>
+            <input
+              type="number"
+              min={0}
+              max={200}
+              value={maxAxisJump || ''}
+              placeholder="unlimited"
+              onChange={(e) => {
+                const v = parseInt(e.target.value, 10);
+                setMaxAxisJump(isNaN(v) || v < 0 ? 0 : v);
+              }}
+              style={{ width: 80 }}
+            />
+            <span className="muted" style={{ fontSize: 11 }}>cells</span>
+          </label>
+          <span className="muted" style={{ fontSize: 12 }}>
+            {maxAxisJump > 0
+              ? `Forbids any single axis-aligned back hop longer than ${maxAxisJump} cells. The solver picks a thread restart instead, keeping the path easier to follow.`
+              : 'Empty / 0 = unlimited (the solver may produce long axis hops).'}
+          </span>
+          <button
+            onClick={() => setMaxAxisJump(0)}
+            style={{ marginLeft: 'auto' }}
+            disabled={maxAxisJump === 0}
+          >
+            Clear cap
+          </button>
+        </div>
+
         <p className="muted" style={{ margin: '0 0 10px', fontSize: 13 }}>
-          Higher <em>diagonal</em> / <em>vertical</em> weights push the back of the work toward
-          all-horizontal threads. Higher <em>thread restart</em> means fewer threads (longer
-          continuous runs, possibly with more back-travel).
+          Diagonal back-travel is forbidden — the back of the work has only horizontal and
+          vertical thread runs. Higher <em>vertical</em> / <em>horizontal</em> weights bias
+          which axis the solver prefers when both are available. Higher <em>thread restart</em>
+          means fewer threads (longer continuous runs, more back-travel between motifs).
         </p>
         <div
           style={{

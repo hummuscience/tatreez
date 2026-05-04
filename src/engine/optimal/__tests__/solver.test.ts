@@ -153,6 +153,61 @@ describe('optimal solver — maxMergeDistance', () => {
     for (const e of expected) expect(got.has(e)).toBe(true);
   });
 
+  it('maxAxisJump caps the longest contiguous back-run, not just per-edge', () => {
+    // The Euler tour can string short back-edges into one long run that
+    // exceeds the per-edge cap. The post-emission pass should split the
+    // run by inserting a thread restart, so the longest contiguous
+    // back-travel within any thread is at most the cap.
+    for (const pattern of Object.values(BUILTIN_PATTERNS)) {
+      for (const cap of [3, 6]) {
+        const steps = solvePatternOptimal(pattern, {
+          mergeRegions: true,
+          maxAxisJump: cap,
+        });
+        let curRun = 0;
+        let longestRun = 0;
+        for (const s of steps) {
+          if (s.kind === 'back' && s.from) {
+            curRun += Math.hypot(s.to[0] - s.from[0], s.to[1] - s.from[1]);
+            if (curRun > longestRun) longestRun = curRun;
+          } else {
+            curRun = 0;
+          }
+        }
+        expect(longestRun, `${pattern.name} cap=${cap}`).toBeLessThanOrEqual(cap);
+        // Coverage must survive the post-pass.
+        const expected = new Set<string>();
+        for (let y = 0; y < pattern.height; y++) {
+          for (let x = 0; x < pattern.width; x++) {
+            if (pattern.cells[y][x] !== 0) {
+              expected.add(`${x},${y}:/`);
+              expected.add(`${x},${y}:\\`);
+            }
+          }
+        }
+        const got = frontLegsCovered(steps);
+        expect(got.size, `${pattern.name} cap=${cap} cov size`).toBe(expected.size);
+        for (const e of expected) {
+          expect(got.has(e), `${pattern.name} cap=${cap} missing ${e}`).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('forbidDiagonalBack=true (default) produces zero diagonal back-travel', () => {
+    for (const pattern of Object.values(BUILTIN_PATTERNS)) {
+      const steps = solvePatternOptimal(pattern);
+      for (const s of steps) {
+        if (s.kind === 'back' && s.from) {
+          const dx = Math.abs(s.to[0] - s.from[0]);
+          const dy = Math.abs(s.to[1] - s.from[1]);
+          // Either purely vertical or purely horizontal.
+          expect(dx === 0 || dy === 0, `diagonal back ${s.from}→${s.to} in ${pattern.name}`).toBe(true);
+        }
+      }
+    }
+  });
+
   it('caps within-region odd-vertex matching, not just between-component merges', () => {
     // Regression for a bug where maxMergeDistance only applied to merging
     // between disconnected components — within a single connected region,

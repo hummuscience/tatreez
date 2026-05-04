@@ -20,6 +20,13 @@ interface SolveRegionOptions {
    * long diagonal slashes across the chart. Undefined = no cap.
    */
   maxMergeDistance?: number;
+  /**
+   * Hard cap on the length of any single axis-aligned back-travel.
+   * Pairs of odd corners farther apart than this prefer a thread
+   * restart over the back-walk, even if the back is cheaper.
+   * Undefined = no cap.
+   */
+  maxAxisJump?: number;
 }
 
 /**
@@ -135,12 +142,18 @@ export function solveOptimal(
 
   // Cap each back distance at threadRestart: if back-walking is more
   // expensive than restarting, the pair will use a thread restart instead.
-  // Also enforce maxMergeDistance: any pair farther than the cap is forced
-  // to use a thread restart even when back-walking would be cheaper. This
-  // prevents long axis slashes across the chart (e.g. (11,11)→(2,11)) when
-  // threadRestart cost is high enough that the matching would otherwise
-  // pair distant odd corners.
-  const cap = regionOptions.maxMergeDistance;
+  // Also enforce maxMergeDistance / maxAxisJump: any pair farther than
+  // either cap is forced to use a thread restart even when back-walking
+  // would be cheaper. This prevents long slashes across the chart and
+  // long-axis "wandering needle" hops that add counting fatigue.
+  const mergeCap = regionOptions.maxMergeDistance;
+  const axisCap = regionOptions.maxAxisJump;
+  const cap =
+    mergeCap === undefined
+      ? axisCap
+      : axisCap === undefined
+        ? mergeCap
+        : Math.min(mergeCap, axisCap);
   const matchCosts: number[][] = backDist.map((row, i) =>
     row.map((d, j) => {
       if (cap !== undefined && i !== j && backDist[i][j] > cap) {
@@ -548,6 +561,45 @@ export function solveOptimal(
     }
   }
 
+  // --- 9. Enforce maxAxisJump on consecutive back-runs ---
+  // The Euler tour can string together short back-edges into long runs
+  // that effectively "wander" along a column or row before reaching the
+  // next stitch. Split such runs by inserting a thread restart at the
+  // start of any back-run whose total length exceeds the cap.
+  if (axisCap !== undefined && axisCap > 0) {
+    const refined: Step[] = [];
+    let runStartIdx = -1;
+    let runLen = 0;
+    for (let i = 0; i < steps.length; i++) {
+      const s = steps[i];
+      if (s.kind === 'back' && s.from) {
+        const segLen = Math.hypot(s.to[0] - s.from[0], s.to[1] - s.from[1]);
+        if (runStartIdx === -1) runStartIdx = refined.length;
+        runLen += segLen;
+        refined.push(s);
+      } else {
+        if (runStartIdx !== -1 && runLen > axisCap) {
+          // Convert this back-run into a thread cut: drop the run,
+          // emit a 'start' at the next non-back step.
+          refined.length = runStartIdx;
+          // The next step (s) becomes the start of a new thread.
+          if (s.kind === 'front' || s.kind === 'start') {
+            const target = s.kind === 'front' ? s.from ?? s.to : s.to;
+            emit(refined, 'start', null, target);
+          }
+        }
+        runStartIdx = -1;
+        runLen = 0;
+        refined.push(s);
+      }
+    }
+    // Trailing back-run with no follow-up: just drop it (no work left).
+    if (runStartIdx !== -1 && runLen > axisCap) {
+      refined.length = runStartIdx;
+    }
+    return refined;
+  }
+
   return steps;
 }
 
@@ -627,6 +679,7 @@ export function solvePatternOptimal(
       allSteps.push(
         ...solveOptimal(region, weights, {
           maxMergeDistance: options.maxMergeDistance,
+          maxAxisJump: options.maxAxisJump,
         }),
       );
     }
@@ -662,6 +715,7 @@ export function solvePatternOptimal(
       ...solveOptimal(r, weights, {
         forceMergeComponents: forceMerge,
         maxMergeDistance: options.maxMergeDistance,
+        maxAxisJump: options.maxAxisJump,
       }),
     );
   }

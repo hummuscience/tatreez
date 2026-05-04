@@ -8,6 +8,11 @@
  * weave). Diagonal back-travel is penalised heavily because diagonal
  * threads on the back of the work cross the weave at an angle and look
  * messy; this is the tatreez aesthetic constraint.
+ *
+ * The `forbidDiagonalBack` flag makes the diagonal aesthetic constraint
+ * a hard rule: when true (default), diagonal moves are unavailable in
+ * the back-graph entirely, forcing all back-paths to be Manhattan
+ * (axis-aligned) routes. The `diag` weight is then irrelevant.
  */
 export interface OptimalWeights {
   /** Per-unit cost of horizontal back-travel along a row of corners. */
@@ -18,6 +23,12 @@ export interface OptimalWeights {
   diag: number;
   /** Cost of a single thread restart (knot off + knot on). */
   threadRestart: number;
+  /**
+   * Forbid diagonal back-travel entirely. Defaults to true: a clean back
+   * has only horizontal and vertical thread runs on it. Set to false to
+   * fall back to the soft-cost behaviour where `diag` weight applies.
+   */
+  forbidDiagonalBack?: boolean;
 }
 
 export const DEFAULT_WEIGHTS: OptimalWeights = {
@@ -25,6 +36,7 @@ export const DEFAULT_WEIGHTS: OptimalWeights = {
   vert: 1,
   diag: 10,
   threadRestart: 15,
+  forbidDiagonalBack: true,
 };
 
 export interface SolveOptions {
@@ -70,6 +82,21 @@ export interface SolveOptions {
    * decides merging).
    */
   maxMergeDistance?: number;
+
+  /**
+   * Maximum length (in corner-grid units) of any single axis-aligned
+   * back-travel hop the solver will produce. Pairs of odd corners that
+   * are farther apart than this are forced to use a thread restart even
+   * if the back-walk would be cheaper.
+   *
+   * This prevents the "fine but visually wandering" plans where the
+   * needle travels 30 cells along a column. A short axis hop is
+   * invisible; a long one looks like a wandering needle to the
+   * stitcher and adds counting fatigue.
+   *
+   * Undefined means no cap.
+   */
+  maxAxisJump?: number;
 
   /**
    * Explicit colour-stitching order (palette indices). Threads of these
