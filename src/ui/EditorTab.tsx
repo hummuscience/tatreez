@@ -19,19 +19,21 @@ export default function EditorTab({ state, onChangePattern, onSaved, onGoToPlans
   const { pattern } = state;
   const [activeColor, setActiveColor] = useState<ColorIndex>(1);
   const [name, setName] = useState(pattern.name);
+  const [nameAr, setNameAr] = useState(pattern.nameAr ?? '');
   const [w, setW] = useState(pattern.width);
   const [h, setH] = useState(pattern.height);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const paintingRef = useRef<{ active: boolean; mode: 'paint' | 'erase' } | null>(null);
 
-  // Sync name and dims when pattern changes externally (e.g. loaded from library)
+  // Sync editable fields when the loaded pattern changes externally.
   useEffect(() => {
     setName(pattern.name);
+    setNameAr(pattern.nameAr ?? '');
     setW(pattern.width);
     setH(pattern.height);
   }, [pattern]);
 
-  // Render the editor canvas whenever pattern changes
+  // Render the editor canvas whenever pattern changes.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -85,7 +87,6 @@ export default function EditorTab({ state, onChangePattern, onSaved, onGoToPlans
     if (pattern.cells[y][x] !== target) setCell(x, y, target);
   };
 
-  // Stop painting on global mouseup so dragging off-canvas doesn't leave it stuck
   useEffect(() => {
     const stop = () => {
       if (paintingRef.current) paintingRef.current.active = false;
@@ -100,147 +101,201 @@ export default function EditorTab({ state, onChangePattern, onSaved, onGoToPlans
   };
 
   const onClear = () => {
-    onChangePattern({ ...emptyPattern(pattern.width, pattern.height, name) });
+    onChangePattern(emptyPattern(pattern.width, pattern.height, name));
   };
 
   const onSave = () => {
     const finalName = name.trim() || 'Untitled';
-    const toSave: Pattern = { ...pattern, name: finalName };
+    const toSave: Pattern = {
+      ...pattern,
+      name: finalName,
+      ...(nameAr.trim() ? { nameAr: nameAr.trim() } : {}),
+    };
     const id = savePattern(toSave);
     onSaved(toSave, savedPatternKey(id));
   };
 
-  return (
-    <div>
-      {pattern.source && (
-        <div
-          className="card"
-          style={{
-            marginBottom: 8,
-            padding: '6px 10px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            fontSize: 12,
-          }}
-        >
-          <span className="muted">From</span>
-          <strong>{pattern.source.archive}</strong>
-          {pattern.source.region && (
-            <>
-              <span className="muted">·</span>
-              <span>{pattern.source.region}</span>
-            </>
-          )}
-          {pattern.source.arabicName && (
-            <>
-              <span className="muted">·</span>
-              <span dir="rtl">{pattern.source.arabicName}</span>
-            </>
-          )}
-          <a
-            href={pattern.source.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ marginLeft: 'auto', fontSize: 11 }}
-          >
-            View original ↗
-          </a>
-        </div>
-      )}
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="toolbar">
-          <input
-            type="text"
-            placeholder="Pattern name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            style={{ width: 220 }}
-          />
-          <span className="muted">Color:</span>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {(() => {
-              // If the pattern has its own palette (e.g. imported from an
-              // image), show that. Otherwise show the global PALETTE.
-              const colors = pattern.palette
-                ? pattern.palette
-                : PALETTE.map((p) => p.color);
-              return colors.map((color, i) => (
-                <div
-                  key={i}
-                  className={`swatch ${i === activeColor ? 'active' : ''} ${color ? '' : 'empty'}`}
-                  style={color ? { background: color } : undefined}
-                  title={
-                    pattern.palette
-                      ? color === null
-                        ? 'empty'
-                        : color
-                      : PALETTE[i]?.name ?? color ?? ''
-                  }
-                  onClick={() => setActiveColor(i as ColorIndex)}
-                />
-              ));
-            })()}
-          </div>
-          <span className="muted" style={{ marginLeft: 8 }}>
-            Size:
-          </span>
-          <input
-            type="number"
-            min={3}
-            max={60}
-            value={w}
-            onChange={(e) => setW(parseInt(e.target.value, 10) || 3)}
-            style={{ width: 60 }}
-          />
-          <span style={{ fontSize: 13 }}>×</span>
-          <input
-            type="number"
-            min={3}
-            max={60}
-            value={h}
-            onChange={(e) => setH(parseInt(e.target.value, 10) || 3)}
-            style={{ width: 60 }}
-          />
-          <button onClick={onResize}>Resize</button>
-          <button onClick={onClear}>Clear</button>
-          <button className="primary" style={{ marginLeft: 'auto' }} onClick={onSave}>
-            Save to library
-          </button>
-        </div>
+  // Decide which palette to show: per-pattern if present, else global.
+  const palette = pattern.palette ?? PALETTE.map((p) => p.color);
 
-        <div className="row">
-          <div className="grid-wrap">
-            <canvas
-              ref={canvasRef}
-              width={CANVAS_SIZE}
-              height={CANVAS_SIZE}
-              style={{ cursor: 'crosshair', display: 'block' }}
-              onMouseDown={handleMouseDown}
-              onMouseMove={handleMouseMove}
+  return (
+    <div className="editor">
+      <aside className="editor-side">
+        <div className="panel">
+          <div className="panel-h">
+            <span>Pattern info</span>
+            <span dir="rtl">معلومات النمط</span>
+          </div>
+          <div className="info-row">
+            <span className="info-k">Name</span>
+            <input
+              className="input"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Pattern name"
             />
           </div>
-          <div style={{ flex: 1, minWidth: 180 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
-              <div className="stat">
-                <div className="stat-label">Stitches</div>
-                <div className="stat-val">{countStitches(pattern)}</div>
-              </div>
-              <div className="stat">
-                <div className="stat-label">Regions</div>
-                <div className="stat-val">{countRegions(pattern)}</div>
-              </div>
+          <div className="info-row">
+            <span className="info-k">Arabic name</span>
+            <input
+              className="input ar-input"
+              dir="rtl"
+              value={nameAr}
+              onChange={(e) => setNameAr(e.target.value)}
+              placeholder="الاسم بالعربية"
+            />
+          </div>
+          <div className="info-row info-row-split">
+            <div>
+              <span className="info-k">Width</span>
+              <input
+                className="input input-sm"
+                type="number"
+                min={3}
+                max={60}
+                value={w}
+                onChange={(e) => setW(parseInt(e.target.value, 10) || 3)}
+              />
             </div>
-            <button
-              className="primary"
-              style={{ marginTop: 12, width: '100%' }}
-              onClick={onGoToPlans}
-            >
-              Generate plans →
+            <div>
+              <span className="info-k">Height</span>
+              <input
+                className="input input-sm"
+                type="number"
+                min={3}
+                max={60}
+                value={h}
+                onChange={(e) => setH(parseInt(e.target.value, 10) || 3)}
+              />
+            </div>
+          </div>
+          <div className="info-row info-row-split">
+            <button className="btn-ghost btn-sm" onClick={onResize}>
+              Resize
+            </button>
+            <button className="btn-ghost btn-sm" onClick={onClear}>
+              Clear
             </button>
           </div>
         </div>
-      </div>
+
+        <div className="panel">
+          <div className="panel-h">
+            <span>Palette</span>
+            <span dir="rtl">لوحة الألوان</span>
+          </div>
+          <div className="palette">
+            <button
+              type="button"
+              className={`swatch swatch-empty${activeColor === 0 ? ' swatch-on' : ''}`}
+              onClick={() => setActiveColor(0)}
+              title="Empty (eraser)"
+              aria-label="Empty"
+            />
+            {palette.slice(1).map((color, i) => {
+              const idx = (i + 1) as ColorIndex;
+              const label = PALETTE[idx]?.name ?? color ?? '';
+              return color ? (
+                <button
+                  type="button"
+                  key={i}
+                  className={`swatch${activeColor === idx ? ' swatch-on' : ''}`}
+                  style={{ background: color }}
+                  onClick={() => setActiveColor(idx)}
+                  title={label}
+                  aria-label={label}
+                />
+              ) : null;
+            })}
+          </div>
+        </div>
+
+        <div className="panel panel-stats">
+          <div className="panel-h">
+            <span>Stats</span>
+            <span dir="rtl">إحصائيات</span>
+          </div>
+          <div className="stat">
+            <span className="stat-label">Stitches</span>
+            <span className="stat-val">{countStitches(pattern)}</span>
+          </div>
+          <div className="stat">
+            <span className="stat-label">Regions</span>
+            <span className="stat-val">{countRegions(pattern)}</span>
+          </div>
+          <div className="stat">
+            <span className="stat-label">Size</span>
+            <span className="stat-val">
+              {pattern.width}×{pattern.height}
+            </span>
+          </div>
+        </div>
+      </aside>
+
+      <main className="editor-main">
+        {pattern.source && (
+          <div className="panel" style={{ padding: '10px 14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12 }}>
+              <span className="info-k" style={{ marginBottom: 0 }}>
+                From
+              </span>
+              <strong>{pattern.source.archive}</strong>
+              {pattern.source.region && (
+                <>
+                  <span className="pat-dot">·</span>
+                  <span>{pattern.source.region}</span>
+                </>
+              )}
+              {(pattern.nameAr || pattern.source.arabicName) && (
+                <>
+                  <span className="pat-dot">·</span>
+                  <span dir="rtl">{pattern.nameAr ?? pattern.source.arabicName}</span>
+                </>
+              )}
+              <a
+                href={pattern.source.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ marginLeft: 'auto', fontSize: 11 }}
+              >
+                View original ↗
+              </a>
+            </div>
+          </div>
+        )}
+
+        <div className="editor-toolbar">
+          <div className="zoom-ctrl">
+            <span className="info-k" style={{ marginBottom: 0 }}>
+              Active
+            </span>
+            <span>
+              {activeColor === 0
+                ? 'eraser'
+                : (PALETTE[activeColor]?.name ?? `color ${activeColor}`)}
+            </span>
+          </div>
+          <div className="editor-actions">
+            <button className="btn-ghost" onClick={onGoToPlans}>
+              Generate plans →
+            </button>
+            <button className="btn-primary" onClick={onSave}>
+              Save to library
+            </button>
+          </div>
+        </div>
+
+        <div className="canvas-stage">
+          <canvas
+            ref={canvasRef}
+            width={CANVAS_SIZE}
+            height={CANVAS_SIZE}
+            style={{ cursor: 'crosshair', display: 'block' }}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+          />
+        </div>
+      </main>
     </div>
   );
 }
