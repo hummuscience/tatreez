@@ -8,6 +8,16 @@ import { getGroundTruth } from '../storage/storage';
 import { getCanonicalGroundTruth } from '../patterns/groundTruths';
 import { cellSize, clearCanvas, drawGridLines, drawPatternBackground } from './canvasUtil';
 import { getPalette } from '../patterns/builtin';
+import {
+  CLOTH_OPTIONS,
+  STRAND_OPTIONS,
+  DEFAULT_CLOTH_ID,
+  DEFAULT_STRANDS_ID,
+  flossPerStitchMm,
+  getCloth,
+  getStrands,
+  SKEIN_MM,
+} from '../project/cloth';
 import type { PatternState } from '../App';
 
 interface Props {
@@ -15,6 +25,12 @@ interface Props {
 }
 
 const VIEW_SIZE = 360;
+
+type AugPlan = Plan & {
+  primitives?: Primitive[];
+  /** stepToPrimitive[i] = index into `primitives` for step `i`, or -1. */
+  stepToPrimitive?: number[];
+};
 
 export default function PlanTab({ state }: Props) {
   const { pattern, patternKey } = state;
@@ -26,27 +42,19 @@ export default function PlanTab({ state }: Props) {
   const [playing, setPlaying] = useState(false);
   const [weights, setWeights] = useState<OptimalWeights>(DEFAULT_WEIGHTS);
   const [mergeRegions, setMergeRegions] = useState(false);
-  const [maxThreads, setMaxThreads] = useState<number>(0); // 0 = unlimited
-  // 0 = unlimited (legacy: only threadRestart cost decides). >0 caps the
-  // back-distance the solver will pay to merge two same-colour regions
-  // into one thread. Prevents long diagonal slashes across the chart.
+  const [maxThreads, setMaxThreads] = useState<number>(0);
   const [maxMergeDistance, setMaxMergeDistance] = useState<number>(8);
-  // 0 = unlimited. >0 caps the longest axis-aligned back hop. Stops the
-  // "wandering needle" pattern where a thread travels 20+ cells along a
-  // column before reaching the next stitch — practical limit for keeping
-  // the path easy to follow.
   const [maxAxisJump, setMaxAxisJump] = useState<number>(6);
   const [autoColourOrder, setAutoColourOrder] = useState(true);
+  const [showAdvancedSolver, setShowAdvancedSolver] = useState(false);
 
-  // Build the displayed list: ground truth first (if any) then engine plans.
-  // Plans are augmented with optional `primitives` + `stepToPrimitive`
-  // for the human-readable instruction view; engine-generated plans
-  // don't have those, only the dedicated "Primitive plan" entry does.
-  type AugPlan = Plan & {
-    primitives?: Primitive[];
-    /** stepToPrimitive[i] = index into `primitives` for step `i`, or -1. */
-    stepToPrimitive?: number[];
-  };
+  // Project setup state
+  const [clothId, setClothId] = useState<string>(DEFAULT_CLOTH_ID);
+  const [strandsId, setStrandsId] = useState<string>(DEFAULT_STRANDS_ID);
+  const cloth = getCloth(clothId);
+  const strands = getStrands(strandsId);
+
+  // ---------- Plan list ----------
   const plans: AugPlan[] = useMemo(() => {
     const colorOrder = autoColourOrder ? optimizeColourOrder(pattern) : undefined;
     const enginePlans = generatePlans(pattern, weights, {
@@ -57,10 +65,6 @@ export default function PlanTab({ state }: Props) {
       colorOrder,
     });
 
-    // Build the primitive plan (separate from the optimal solver — it
-    // uses a decomposition heuristic, not CPP). The user reads this as
-    // a list of named instructions instead of a list of corner-to-corner
-    // steps, eliminating per-step counting fatigue.
     let primitivePlan: AugPlan | null = null;
     try {
       const pp = planAsPrimitives(pattern, {
@@ -109,14 +113,30 @@ export default function PlanTab({ state }: Props) {
 
   const groundTruth = plans[0]?.isGroundTruth ? plans[0] : null;
   const activePlan = plans[activePlanIdx] ?? null;
+
+  // ---------- Stitch counts ----------
+  const stitchesByColor = useMemo(() => {
+    const counts = new Map<number, number>();
+    for (let y = 0; y < pattern.height; y++) {
+      for (let x = 0; x < pattern.width; x++) {
+        const v = pattern.cells[y][x];
+        if (v) counts.set(v, (counts.get(v) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [pattern]);
+  const totalStitches = useMemo(
+    () => [...stitchesByColor.values()].reduce((a, b) => a + b, 0),
+    [stitchesByColor],
+  );
+
+  // ---------- Thread navigation state ----------
   const totalThreads = useMemo(() => {
     if (!activePlan) return 0;
     let n = 0;
     for (const s of activePlan.steps) if (s.kind === 'start') n++;
     return n;
   }, [activePlan]);
-  // Compute the active thread index (0-based) from the current step cursor.
-  // Walk through `step` steps and count 'start' events.
   const activeThread = useMemo(() => {
     if (!activePlan || step <= 0) return -1;
     let t = -1;
@@ -127,24 +147,19 @@ export default function PlanTab({ state }: Props) {
     return t;
   }, [activePlan, step]);
 
-  // Reset step / active plan when plan list changes
   useEffect(() => {
     setActivePlanIdx(0);
     setStep(plans[0]?.steps.length ?? 0);
   }, [plans]);
 
-  // Reset step when switching active plan or when the plan length changes
-  // (e.g. weights changed and the solver returned a different length).
   useEffect(() => {
     if (!activePlan) return;
     setStep((s) => {
       if (s > activePlan.steps.length) return activePlan.steps.length;
-      // If we were "at the end" before, stay at the end of the new plan
       return s === 0 ? 0 : activePlan.steps.length;
     });
   }, [activePlanIdx, activePlan]);
 
-  // Play loop
   useEffect(() => {
     if (!playing || !activePlan) return;
     const id = window.setInterval(() => {
@@ -157,10 +172,8 @@ export default function PlanTab({ state }: Props) {
     return () => window.clearInterval(id);
   }, [playing, activePlan]);
 
-  // Effective per-pattern palette (falls back to global PALETTE)
+  // ---------- Canvas rendering (unchanged from old PlanTab) ----------
   const palette = useMemo(() => getPalette(pattern), [pattern]);
-
-  // Render front + back
   useEffect(() => {
     const fc = frontRef.current;
     const bc = backRef.current;
@@ -173,10 +186,7 @@ export default function PlanTab({ state }: Props) {
     clearCanvas(fctx, fc.width, fc.height);
     clearCanvas(bctx, bc.width, bc.height);
 
-    // Faded pattern on front
     drawPatternBackground(fctx, pattern, cs, 0.18);
-
-    // Grid on both
     drawGridLines(fctx, cs, pattern.width, pattern.height, 'rgba(0,0,0,0.08)');
     drawGridLines(bctx, cs, pattern.width, pattern.height, 'rgba(0,0,0,0.08)');
 
@@ -186,10 +196,8 @@ export default function PlanTab({ state }: Props) {
     );
     let lastNeedle: [number, number] | null = null;
 
-    // Walk the steps up to `step`, tracking which thread we're currently
-    // on (incremented on every 'start' step).
     const stepsToShow = activePlan.steps.slice(0, step);
-    let currentThread = -1; // -1 before the first start
+    let currentThread = -1;
     for (const s of stepsToShow) {
       if (s.kind === 'start') {
         currentThread++;
@@ -223,17 +231,10 @@ export default function PlanTab({ state }: Props) {
         const L = legsDone[y][x];
         if (!L.slash && !L.back) continue;
         const both = L.slash && L.back;
-        // Use the cell's palette colour so multi-colour patterns
-        // (like Cypress Tree) render in the correct colours. Faded
-        // when only one leg has been laid; full saturation for
-        // completed crosses.
         const palIdx = pattern.cells[y][x] || 1;
         const baseColor = palette[palIdx] ?? '#D85A30';
         const isActiveThread = L.thread === activeThread && activeThread >= 0;
 
-        // Highlight cells on the active thread with a coloured outline
-        // before drawing the legs. This makes the current "in progress"
-        // thread visually distinct from already-completed ones.
         if (isActiveThread) {
           fctx.fillStyle = 'rgba(24, 95, 165, 0.15)';
           fctx.fillRect(x * cs, y * cs, cs, cs);
@@ -268,18 +269,7 @@ export default function PlanTab({ state }: Props) {
     }
   }, [pattern, activePlan, step, activeThread, palette]);
 
-  if (plans.length === 0) {
-    return (
-      <div className="card">
-        <p className="empty-hint">
-          No stitches yet — paint cells in the editor or load a pattern from the library.
-        </p>
-      </div>
-    );
-  }
-
-  // When viewing the primitive plan, swap the per-step action text with
-  // the primitive description so the user reads instructions, not steps.
+  // ---------- Action panel text ----------
   const actionText = (() => {
     if (!activePlan || step <= 0 || step > activePlan.steps.length) return '—';
     if (activePlan.primitives && activePlan.stepToPrimitive) {
@@ -295,13 +285,13 @@ export default function PlanTab({ state }: Props) {
       const dx = Math.abs(s.to[0] - s.from[0]);
       const dy = Math.abs(s.to[1] - s.from[1]);
       const len = Math.hypot(dx, dy);
-      return dx === 0 || dy === 0 ? `Back: axis ${Math.round(len)}` : `Back: diag ${len.toFixed(1)}`;
+      return dx === 0 || dy === 0
+        ? `Back: axis ${Math.round(len)}`
+        : `Back: diag ${len.toFixed(1)}`;
     }
     return '—';
   })();
 
-  // Active primitive index (when on the primitive plan) for the
-  // "primitive X of N" stat.
   const activePrimitiveIdx = (() => {
     if (!activePlan?.stepToPrimitive || step <= 0) return -1;
     const i = step - 1;
@@ -312,447 +302,526 @@ export default function PlanTab({ state }: Props) {
     ? activePlan.primitives.filter((p) => p.kind !== 'restart').length
     : 0;
 
+  // ---------- Thread requirement math ----------
+  /** Real back-travel multiplier from the active plan's score. */
+  const activeBackMult = useMemo(() => {
+    if (!activePlan || totalStitches === 0) return 1;
+    const stitchMm = totalStitches * flossPerStitchMm(cloth);
+    const backMm = (activePlan.score.axis + activePlan.score.diag) * cloth.holeMm;
+    if (stitchMm === 0) return 1;
+    return 1 + backMm / stitchMm;
+  }, [activePlan, totalStitches, cloth]);
+
+  const threadNeeds = useMemo(() => {
+    const flossMm = flossPerStitchMm(cloth);
+    const out: Array<{
+      idx: number;
+      color: string;
+      stitches: number;
+      totalMm: number;
+      skeins: number;
+    }> = [];
+    const palLen = pattern.palette?.length ?? palette.length;
+    for (let i = 1; i < palLen; i++) {
+      const colorVal = pattern.palette ? pattern.palette[i] : palette[i];
+      if (!colorVal) continue;
+      const stitches = stitchesByColor.get(i) ?? 0;
+      if (stitches === 0) continue;
+      const totalMm = stitches * flossMm * activeBackMult * strands.mult;
+      out.push({
+        idx: i,
+        color: colorVal,
+        stitches,
+        totalMm,
+        skeins: totalMm / SKEIN_MM,
+      });
+    }
+    return out;
+  }, [pattern.palette, palette, stitchesByColor, cloth, strands, activeBackMult]);
+
+  const totalFlossMm = threadNeeds.reduce((a, b) => a + b.totalMm, 0);
+  const maxSkeins = threadNeeds.reduce((m, t) => Math.max(m, t.skeins), 0.5);
+
+  // ---------- Finished size ----------
+  const finishedW = ((pattern.width / cloth.count) * 2.54).toFixed(1);
+  const finishedH = ((pattern.height / cloth.count) * 2.54).toFixed(1);
+
+  if (plans.length === 0) {
+    return (
+      <div className="panel">
+        <p className="empty-hint">
+          No stitches yet — paint cells in the editor or load a pattern from the
+          library.
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <div>
-      <p className="section-label">Solver settings</p>
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            margin: '0 0 12px',
-            padding: '8px 10px',
-            background: 'var(--bg-soft)',
-            borderRadius: 6,
-          }}
-        >
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={mergeRegions}
-              onChange={(e) => setMergeRegions(e.target.checked)}
-            />
-            <strong>Merge regions into shared threads</strong>
-          </label>
-          <span className="muted" style={{ fontSize: 12 }}>
-            {mergeRegions
-              ? 'Math-optimal: one big thread per colour, may zig-zag across the chart.'
-              : 'Practical: one thread per visual region, easy to follow by hand.'}
-          </span>
+    <div className="plan-layout">
+      {/* ---- Project setup strip ---- */}
+      <section className="panel project-setup">
+        <div className="panel-h">
+          <span>Project setup</span>
+          <span dir="rtl">إعداد المشروع</span>
         </div>
-
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            margin: '0 0 12px',
-            padding: '8px 10px',
-            background: 'var(--bg-soft)',
-            borderRadius: 6,
-          }}
-        >
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={autoColourOrder}
-              onChange={(e) => setAutoColourOrder(e.target.checked)}
-            />
-            <strong>Auto-order colours</strong>
-          </label>
-          <span className="muted" style={{ fontSize: 12 }}>
-            {autoColourOrder
-              ? 'Greedy nearest-neighbour over per-colour centroids — minimises walking between threads.'
-              : 'Stitches colours in palette index order (1, 2, …).'}
-          </span>
+        <div className="setup-grid">
+          <div className="setup-field">
+            <div className="setup-label">
+              <span>Cloth</span>
+              <span className="setup-label-ar" dir="rtl">
+                القماش
+              </span>
+            </div>
+            <select
+              className="input"
+              value={clothId}
+              onChange={(e) => setClothId(e.target.value)}
+            >
+              {CLOTH_OPTIONS.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label} — {c.holeMm.toFixed(2)} mm
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="setup-field">
+            <div className="setup-label">
+              <span>Floss thickness</span>
+              <span className="setup-label-ar" dir="rtl">
+                سُمك الخيط
+              </span>
+            </div>
+            <select
+              className="input"
+              value={strandsId}
+              onChange={(e) => setStrandsId(e.target.value)}
+            >
+              {STRAND_OPTIONS.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="setup-field">
+            <div className="setup-label">
+              <span>Finished size</span>
+              <span className="setup-label-ar" dir="rtl">
+                المقاس النهائي
+              </span>
+            </div>
+            <div className="setup-readout">
+              <span className="setup-readout-val">
+                {finishedW} × {finishedH}
+              </span>
+              <span className="setup-readout-unit">cm</span>
+            </div>
+          </div>
+          <div className="setup-field">
+            <div className="setup-label">
+              <span>Total stitches</span>
+              <span className="setup-label-ar" dir="rtl">
+                عدد الغرز
+              </span>
+            </div>
+            <div className="setup-readout">
+              <span className="setup-readout-val">
+                {totalStitches.toLocaleString()}
+              </span>
+            </div>
+          </div>
         </div>
+      </section>
 
-        {!mergeRegions && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              margin: '0 0 12px',
-              padding: '8px 10px',
-              background: 'var(--bg-soft)',
-              borderRadius: 6,
-              flexWrap: 'wrap',
-            }}
-          >
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <strong>Max threads per colour:</strong>
-              <input
-                type="number"
-                min={0}
-                max={100}
-                value={maxThreads || ''}
-                placeholder="unlimited"
-                onChange={(e) => {
-                  const v = parseInt(e.target.value, 10);
-                  setMaxThreads(isNaN(v) || v < 0 ? 0 : v);
-                }}
-                style={{ width: 80 }}
-              />
-            </label>
-            <span className="muted" style={{ fontSize: 12 }}>
-              {maxThreads > 0
-                ? `Greedily merges nearest same-colour regions until each colour has at most ${maxThreads} thread${maxThreads === 1 ? '' : 's'}.`
-                : 'Empty / 0 = unlimited (one thread per visual region).'}
+      {/* ---- Main two-column body ---- */}
+      <div className="plan-body">
+        {/* Left: front + back canvases */}
+        <section className="panel plan-stage">
+          <div className="panel-h">
+            <span>Stitch playback</span>
+            <span dir="rtl">معاينة الغرز</span>
+          </div>
+
+          <div className="plan-canvases">
+            <div>
+              <div className="info-k" style={{ marginBottom: 4 }}>
+                Front
+              </div>
+              <div className="canvas-stage" style={{ minHeight: 0, padding: 12 }}>
+                <canvas
+                  ref={frontRef}
+                  width={VIEW_SIZE}
+                  height={VIEW_SIZE}
+                  style={{ display: 'block' }}
+                />
+              </div>
+            </div>
+            <div>
+              <div className="info-k" style={{ marginBottom: 4 }}>
+                Back
+              </div>
+              <div className="canvas-stage" style={{ minHeight: 0, padding: 12 }}>
+                <canvas
+                  ref={backRef}
+                  width={VIEW_SIZE}
+                  height={VIEW_SIZE}
+                  style={{ display: 'block' }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="step-bar">
+            <button
+              className="btn-ghost btn-sm"
+              onClick={() => setStep((s) => Math.max(0, s - 1))}
+              disabled={!activePlan}
+            >
+              ←
+            </button>
+            <button
+              className={`${playing ? 'btn-ghost' : 'btn-primary'} btn-sm`}
+              onClick={() => setPlaying((p) => !p)}
+              disabled={!activePlan}
+            >
+              {playing ? '⏸ Pause' : '▶ Play'}
+            </button>
+            <input
+              type="range"
+              min={0}
+              max={activePlan?.steps.length ?? 0}
+              value={step}
+              onChange={(e) => setStep(parseInt(e.target.value, 10))}
+            />
+            <span className="step-count info-k">
+              {step} / {activePlan?.steps.length ?? 0}
             </span>
             <button
-              onClick={() => setMaxThreads(0)}
-              style={{ marginLeft: 'auto' }}
-              disabled={maxThreads === 0}
+              className="btn-ghost btn-sm"
+              onClick={() =>
+                setStep((s) => Math.min(activePlan?.steps.length ?? 0, s + 1))
+              }
+              disabled={!activePlan}
             >
-              Clear cap
+              →
             </button>
           </div>
-        )}
 
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            margin: '0 0 12px',
-            padding: '8px 10px',
-            background: 'var(--bg-soft)',
-            borderRadius: 6,
-            flexWrap: 'wrap',
-          }}
-        >
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <strong>Max merge distance:</strong>
-            <input
-              type="number"
-              min={0}
-              max={200}
-              value={maxMergeDistance || ''}
-              placeholder="unlimited"
-              onChange={(e) => {
-                const v = parseInt(e.target.value, 10);
-                setMaxMergeDistance(isNaN(v) || v < 0 ? 0 : v);
-              }}
-              style={{ width: 80 }}
-            />
-            <span className="muted" style={{ fontSize: 11 }}>cells</span>
-          </label>
-          <span className="muted" style={{ fontSize: 12 }}>
-            {maxMergeDistance > 0
-              ? `Merges two regions into one thread only if their nearest corners are within ${maxMergeDistance} cells. Stops long diagonal slashes across the chart.`
-              : 'Empty / 0 = unlimited (cost-only merge decisions).'}
-          </span>
-          <button
-            onClick={() => setMaxMergeDistance(0)}
-            style={{ marginLeft: 'auto' }}
-            disabled={maxMergeDistance === 0}
-          >
-            Clear cap
-          </button>
-        </div>
+          <div className="legend">
+            <div>
+              <span className="dot" style={{ background: '#D85A30' }} />
+              Front: cross
+            </div>
+            <div>
+              <span className="dot" style={{ background: '#F0997B' }} />
+              Front: half
+            </div>
+            <div>
+              <span className="dot dot-neat" />
+              Back: neat (axis)
+            </div>
+            <div>
+              <span className="dot dot-messy" />
+              Back: messy (diag)
+            </div>
+            <div>
+              <span className="dot dot-thread" />
+              Current thread
+            </div>
+          </div>
+        </section>
 
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            margin: '0 0 12px',
-            padding: '8px 10px',
-            background: 'var(--bg-soft)',
-            borderRadius: 6,
-            flexWrap: 'wrap',
-          }}
-        >
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <strong>Max axis jump:</strong>
-            <input
-              type="number"
-              min={0}
-              max={200}
-              value={maxAxisJump || ''}
-              placeholder="unlimited"
-              onChange={(e) => {
-                const v = parseInt(e.target.value, 10);
-                setMaxAxisJump(isNaN(v) || v < 0 ? 0 : v);
-              }}
-              style={{ width: 80 }}
-            />
-            <span className="muted" style={{ fontSize: 11 }}>cells</span>
-          </label>
-          <span className="muted" style={{ fontSize: 12 }}>
-            {maxAxisJump > 0
-              ? `Forbids any single axis-aligned back hop longer than ${maxAxisJump} cells. The solver picks a thread restart instead, keeping the path easier to follow.`
-              : 'Empty / 0 = unlimited (the solver may produce long axis hops).'}
-          </span>
-          <button
-            onClick={() => setMaxAxisJump(0)}
-            style={{ marginLeft: 'auto' }}
-            disabled={maxAxisJump === 0}
-          >
-            Clear cap
-          </button>
-        </div>
-
-        <p className="muted" style={{ margin: '0 0 10px', fontSize: 13 }}>
-          Diagonal back-travel is forbidden — the back of the work has only horizontal and
-          vertical thread runs. Higher <em>vertical</em> / <em>horizontal</em> weights bias
-          which axis the solver prefers when both are available. Higher <em>thread restart</em>
-          means fewer threads (longer continuous runs, more back-travel between motifs).
-        </p>
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-            gap: 12,
-          }}
-        >
-          <WeightSlider
-            label="Horizontal back-travel"
-            min={0}
-            max={20}
-            step={0.5}
-            value={weights.horiz}
-            onChange={(v) => setWeights((w) => ({ ...w, horiz: v }))}
-          />
-          <WeightSlider
-            label="Vertical back-travel"
-            min={0}
-            max={20}
-            step={0.5}
-            value={weights.vert}
-            onChange={(v) => setWeights((w) => ({ ...w, vert: v }))}
-          />
-          <WeightSlider
-            label="Diagonal back-travel"
-            min={0}
-            max={20}
-            step={0.5}
-            value={weights.diag}
-            onChange={(v) => setWeights((w) => ({ ...w, diag: v }))}
-          />
-          <WeightSlider
-            label="Thread restart"
-            min={0}
-            max={200}
-            step={1}
-            value={weights.threadRestart}
-            onChange={(v) => setWeights((w) => ({ ...w, threadRestart: v }))}
-          />
-        </div>
-        <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
-          <button onClick={() => setWeights(DEFAULT_WEIGHTS)}>Reset to defaults</button>
-          <button
-            onClick={() =>
-              setWeights({ horiz: 1, vert: 1, diag: 10, threadRestart: 8 })
-            }
-            title="Cheap restarts — solver prefers many short threads over long back-travel"
-          >
-            Many threads
-          </button>
-          <button
-            onClick={() =>
-              setWeights({ horiz: 1, vert: 1, diag: 10, threadRestart: 100 })
-            }
-            title="Big penalty for restarts — solver favours one long thread per colour"
-          >
-            One thread / colour
-          </button>
-          <button
-            onClick={() =>
-              setWeights({ horiz: 1, vert: 10, diag: 20, threadRestart: 15 })
-            }
-            title="Strict horizontal-only back: penalises both vertical and diagonal"
-          >
-            Horizontal-only back
-          </button>
-        </div>
-      </div>
-
-      <p className="section-label">Ranked stitch plans</p>
-      <div className="card" style={{ marginBottom: 24 }}>
-        <div className="cand-grid">
-          {plans.map((p, i) => {
-            const axisPct = Math.round(p.score.axisFraction * 100);
-            const isActive = i === activePlanIdx;
-            let extra: React.ReactNode = null;
-            if (p.isGroundTruth) {
-              extra = (
-                <span className="pill success" style={{ marginLeft: 6 }}>
-                  Reference
-                </span>
-              );
-            } else if (groundTruth) {
-              const delta = Math.round(p.score.composite - groundTruth.score.composite);
-              const sign = delta >= 0 ? '+' : '';
-              extra = (
-                <span className="pill" style={{ marginLeft: 6 }}>
-                  {sign}
-                  {delta} vs GT
-                </span>
-              );
-            }
-            return (
-              <div
-                key={i}
-                className={`cand ${isActive ? 'active' : ''}`}
-                onClick={() => setActivePlanIdx(i)}
-              >
-                <div className="cand-title">
-                  {p.label}
-                  {extra}
-                </div>
-                <div className="cand-meta">
-                  Score {Math.round(p.score.composite)} · {axisPct}% neat back · {p.score.starts}{' '}
-                  thread{p.score.starts === 1 ? '' : 's'}
-                </div>
-                <div className="cand-meta">
-                  {Math.round(p.score.axis)} units neat, {Math.round(p.score.diag)} units diagonal
-                </div>
-                {(p.score.parityViolations > 0 || p.score.underOverViolations > 0) && (
-                  <div className="cand-meta" style={{ marginTop: 2 }}>
-                    {p.score.parityViolations > 0 && (
-                      <span
-                        className="pill"
-                        title="Per Biedl 2005 Theorem 6, a perfect stitching has matching start/end parity within each thread. This plan has threads where the first and last stitch differ in (x+y) mod 2 — likely improvable."
-                      >
-                        {p.score.parityViolations} parity {p.score.parityViolations === 1 ? 'violation' : 'violations'}
+        {/* Right: side column */}
+        <aside className="plan-side">
+          {/* Ranked plans */}
+          <div className="panel">
+            <div className="panel-h">
+              <span>Ranked stitch plans</span>
+              <span dir="rtl">الخطط المرتبة</span>
+            </div>
+            <div className="plan-list">
+              {plans.map((p, i) => {
+                const axisPct = Math.round(p.score.axisFraction * 100);
+                const isActive = i === activePlanIdx;
+                let badge: React.ReactNode = null;
+                if (p.isGroundTruth) {
+                  badge = <span className="badge-ref">REF</span>;
+                } else if (groundTruth) {
+                  const delta = Math.round(
+                    p.score.composite - groundTruth.score.composite,
+                  );
+                  const sign = delta >= 0 ? '+' : '';
+                  badge = (
+                    <span className="badge-delta">
+                      {sign}
+                      {delta} vs GT
+                    </span>
+                  );
+                }
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    className={`plan-item${isActive ? ' plan-item-on' : ''}`}
+                    onClick={() => setActivePlanIdx(i)}
+                  >
+                    <div className="plan-item-row">
+                      <span className="plan-item-name">{p.label}</span>
+                      {badge}
+                    </div>
+                    <div className="plan-item-stats">
+                      <span>score {Math.round(p.score.composite)}</span>
+                      <span>· {axisPct}% neat</span>
+                      <span>
+                        · {p.score.starts} thread
+                        {p.score.starts === 1 ? '' : 's'}
                       </span>
-                    )}
-                    {p.score.underOverViolations > 0 && (
-                      <>
-                        {p.score.parityViolations > 0 && ' '}
-                        <span
-                          className="pill"
-                          title="Cells where the over-diagonal `\\` was stitched before the under-diagonal `/`. The cross looks reversed and reflects light differently. The CPP solver does not currently enforce this ordering."
-                        >
-                          {p.score.underOverViolations} under/over
-                        </span>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+                    </div>
+                    <div className="plan-item-stats">
+                      <span>{Math.round(p.score.axis)} axis</span>
+                      <span>· {Math.round(p.score.diag)} diag</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-      <p className="section-label">Step through</p>
-      <div className="card">
-        <div className="row" style={{ gap: 24 }}>
-          <div>
-            <div className="muted" style={{ marginBottom: 4 }}>
-              Front
+          {/* Solver settings */}
+          <div className="panel">
+            <div className="panel-h">
+              <span>Solver settings</span>
+              <span dir="rtl">إعدادات المُحَلِّل</span>
             </div>
-            <div className="grid-wrap">
-              <canvas
-                ref={frontRef}
-                width={VIEW_SIZE}
-                height={VIEW_SIZE}
-                style={{ display: 'block' }}
+
+            <label className="info-row" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={mergeRegions}
+                onChange={(e) => setMergeRegions(e.target.checked)}
               />
-            </div>
-          </div>
-          <div>
-            <div className="muted" style={{ marginBottom: 4 }}>
-              Back
-            </div>
-            <div className="grid-wrap">
-              <canvas
-                ref={backRef}
-                width={VIEW_SIZE}
-                height={VIEW_SIZE}
-                style={{ display: 'block' }}
+              <span style={{ fontSize: 12 }}>Merge regions into shared threads</span>
+            </label>
+
+            <label className="info-row" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={autoColourOrder}
+                onChange={(e) => setAutoColourOrder(e.target.checked)}
               />
-            </div>
-          </div>
-          <div style={{ flex: 1, minWidth: 160 }}>
-            <div className="stat">
-              <div className="stat-label">Step</div>
-              <div className="stat-val">
-                {step} / {activePlan?.steps.length ?? 0}
+              <span style={{ fontSize: 12 }}>Auto-order colours</span>
+            </label>
+
+            <div className="info-row info-row-split" style={{ marginTop: 6 }}>
+              <div>
+                <span className="info-k">Max threads / colour</span>
+                <input
+                  className="input input-sm"
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={maxThreads || ''}
+                  placeholder="∞"
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    setMaxThreads(isNaN(v) || v < 0 ? 0 : v);
+                  }}
+                />
+              </div>
+              <div>
+                <span className="info-k">Max merge dist</span>
+                <input
+                  className="input input-sm"
+                  type="number"
+                  min={0}
+                  max={200}
+                  value={maxMergeDistance || ''}
+                  placeholder="∞"
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    setMaxMergeDistance(isNaN(v) || v < 0 ? 0 : v);
+                  }}
+                />
               </div>
             </div>
-            <div className="stat" style={{ marginTop: 8 }}>
-              <div className="stat-label">Thread</div>
-              <div className="stat-val">
-                {activeThread >= 0 ? `${activeThread + 1} / ${totalThreads}` : `– / ${totalThreads}`}
+
+            <div className="info-row info-row-split">
+              <div>
+                <span className="info-k">Max axis jump</span>
+                <input
+                  className="input input-sm"
+                  type="number"
+                  min={0}
+                  max={200}
+                  value={maxAxisJump || ''}
+                  placeholder="∞"
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    setMaxAxisJump(isNaN(v) || v < 0 ? 0 : v);
+                  }}
+                />
+              </div>
+              <div style={{ alignSelf: 'end' }}>
+                <button
+                  type="button"
+                  className="btn-ghost btn-sm"
+                  onClick={() => setShowAdvancedSolver((v) => !v)}
+                  style={{ width: '100%' }}
+                >
+                  {showAdvancedSolver ? 'Hide weights' : 'Show weights'}
+                </button>
               </div>
             </div>
-            {totalPrimitives > 0 && (
-              <div className="stat" style={{ marginTop: 8 }}>
-                <div className="stat-label">Primitive</div>
-                <div className="stat-val">
-                  {activePrimitiveIdx >= 0
-                    ? `${activePrimitiveIdx + 1} / ${activePlan?.primitives?.length ?? 0}`
-                    : `– / ${activePlan?.primitives?.length ?? 0}`}
+
+            {showAdvancedSolver && (
+              <>
+                <WeightSlider
+                  label="Horizontal back"
+                  min={0}
+                  max={20}
+                  step={0.5}
+                  value={weights.horiz}
+                  onChange={(v) => setWeights((w) => ({ ...w, horiz: v }))}
+                />
+                <WeightSlider
+                  label="Vertical back"
+                  min={0}
+                  max={20}
+                  step={0.5}
+                  value={weights.vert}
+                  onChange={(v) => setWeights((w) => ({ ...w, vert: v }))}
+                />
+                <WeightSlider
+                  label="Diagonal back"
+                  min={0}
+                  max={20}
+                  step={0.5}
+                  value={weights.diag}
+                  onChange={(v) => setWeights((w) => ({ ...w, diag: v }))}
+                />
+                <WeightSlider
+                  label="Thread restart"
+                  min={0}
+                  max={200}
+                  step={1}
+                  value={weights.threadRestart}
+                  onChange={(v) =>
+                    setWeights((w) => ({ ...w, threadRestart: v }))
+                  }
+                />
+                <div className="preset-row">
+                  <button
+                    className="btn-ghost btn-sm"
+                    onClick={() => setWeights(DEFAULT_WEIGHTS)}
+                  >
+                    Defaults
+                  </button>
+                  <button
+                    className="btn-ghost btn-sm"
+                    onClick={() =>
+                      setWeights({ horiz: 1, vert: 1, diag: 10, threadRestart: 8 })
+                    }
+                  >
+                    Many threads
+                  </button>
+                  <button
+                    className="btn-ghost btn-sm"
+                    onClick={() =>
+                      setWeights({ horiz: 1, vert: 1, diag: 10, threadRestart: 100 })
+                    }
+                  >
+                    One per colour
+                  </button>
                 </div>
-              </div>
+              </>
             )}
-            <div className="stat" style={{ marginTop: 8 }}>
-              <div className="stat-label">Action</div>
-              <div className="stat-val" style={{ fontSize: 13 }}>
-                {actionText}
+          </div>
+
+          {/* Thread requirements */}
+          {threadNeeds.length > 0 && (
+            <div className="panel">
+              <div className="panel-h">
+                <span>Thread requirements</span>
+                <span dir="rtl">احتياجات الخيط</span>
+              </div>
+              <div className="thread-needs">
+                {threadNeeds.map((t) => (
+                  <div key={t.idx} className="thread-need">
+                    <div className="tn-swatch" style={{ background: t.color }} />
+                    <div className="tn-meta">
+                      <div className="tn-row">
+                        <span className="tn-stitches">
+                          {t.stitches} stitches
+                        </span>
+                        <span className="tn-skeins">
+                          {t.skeins.toFixed(2)} skeins
+                        </span>
+                      </div>
+                      <div className="tn-bar">
+                        <div
+                          className="tn-bar-fill"
+                          style={{
+                            width: `${Math.min(100, (t.skeins / maxSkeins) * 100)}%`,
+                            background: t.color,
+                          }}
+                        />
+                      </div>
+                      <div className="tn-len">
+                        {(t.totalMm / 1000).toFixed(2)} m floss ·{' '}
+                        {t.totalMm.toFixed(0)} mm
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="thread-total">
+                <span>Total floss</span>
+                <strong>{(totalFlossMm / 1000).toFixed(2)} m</strong>
+              </div>
+              <div className="thread-note">
+                Includes ~{Math.round((activeBackMult - 1) * 100)}% back-travel
+                for <em>{activePlan?.label ?? 'plan'}</em>. Allow extra for
+                knots and tail-ends.
               </div>
             </div>
-          </div>
-        </div>
+          )}
 
-        <div className="step-bar">
-          <button onClick={() => setStep((s) => Math.max(0, s - 1))} disabled={!activePlan}>
-            ←
-          </button>
-          <button
-            onClick={() => setPlaying((p) => !p)}
-            disabled={!activePlan}
-            className={playing ? '' : 'primary'}
-          >
-            {playing ? '⏸ Pause' : '▶ Play'}
-          </button>
-          <input
-            type="range"
-            min={0}
-            max={activePlan?.steps.length ?? 0}
-            value={step}
-            onChange={(e) => setStep(parseInt(e.target.value, 10))}
-          />
-          <button
-            onClick={() =>
-              setStep((s) => Math.min(activePlan?.steps.length ?? 0, s + 1))
-            }
-            disabled={!activePlan}
-          >
-            →
-          </button>
-        </div>
-
-        <div className="legend">
-          <div className="legend-item">
-            <div className="legend-dot" style={{ background: '#D85A30' }} />
-            Front: cross
+          {/* Action / step meta */}
+          <div className="panel">
+            <div className="panel-h">
+              <span>This step</span>
+              <span dir="rtl">هذه الخطوة</span>
+            </div>
+            <div className="step-meta">
+              <div className="stat">
+                <span className="stat-label">Step</span>
+                <span className="stat-val">
+                  {step} / {activePlan?.steps.length ?? 0}
+                </span>
+              </div>
+              <div className="stat">
+                <span className="stat-label">Thread</span>
+                <span className="stat-val">
+                  {activeThread >= 0
+                    ? `${activeThread + 1} / ${totalThreads}`
+                    : `– / ${totalThreads}`}
+                </span>
+              </div>
+              {totalPrimitives > 0 && (
+                <div className="stat">
+                  <span className="stat-label">Primitive</span>
+                  <span className="stat-val">
+                    {activePrimitiveIdx >= 0
+                      ? `${activePrimitiveIdx + 1} / ${activePlan?.primitives?.length ?? 0}`
+                      : `– / ${activePlan?.primitives?.length ?? 0}`}
+                  </span>
+                </div>
+              )}
+            </div>
+            <div className="step-action">{actionText}</div>
           </div>
-          <div className="legend-item">
-            <div className="legend-dot" style={{ background: '#F0997B' }} />
-            Front: half
-          </div>
-          <div className="legend-item">
-            <div className="legend-dot" style={{ background: '#5DCAA5' }} />
-            Back: neat (axis)
-          </div>
-          <div className="legend-item">
-            <div className="legend-dot" style={{ background: '#E24B4A' }} />
-            Back: messy (diag)
-          </div>
-          <div className="legend-item">
-            <div
-              className="legend-dot"
-              style={{ background: 'rgba(24, 95, 165, 0.25)', border: '1px solid #185fa5' }}
-            />
-            Current thread
-          </div>
-        </div>
+        </aside>
       </div>
     </div>
   );
@@ -769,9 +838,10 @@ interface WeightSliderProps {
 
 function WeightSlider({ label, min, max, step, value, onChange }: WeightSliderProps) {
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-        {label}: <strong style={{ color: 'var(--text-primary)' }}>{value}</strong>
+    <label className="slider">
+      <span className="slider-h">
+        <span>{label}</span>
+        <strong>{value}</strong>
       </span>
       <input
         type="range"
@@ -780,7 +850,6 @@ function WeightSlider({ label, min, max, step, value, onChange }: WeightSliderPr
         step={step}
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
-        style={{ padding: 0 }}
       />
     </label>
   );

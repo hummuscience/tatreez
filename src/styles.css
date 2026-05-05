@@ -284,3 +284,12 @@ body {
 .gt-named-parts { padding-top: 4px; }
 .np-h { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink); margin-bottom: 6px; }
 .np-empty { font-size: 12px; color: var(--ink-soft); line-height: 1.5; }
+
+/* Plan layout shims (not in original handoff CSS, added by porter). */
+.plan-layout { display: flex; flex-direction: column; gap: 16px; }
+.plan-body { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; align-items: start; }
+.plan-canvases { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 1100px) {
+  .plan-body { grid-template-columns: 1fr; }
+  .plan-canvases { grid-template-columns: 1fr; }
+}
