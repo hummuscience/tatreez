@@ -293,3 +293,20 @@ body {
   .plan-body { grid-template-columns: 1fr; }
   .plan-canvases { grid-template-columns: 1fr; }
 }
+
+/* Emphasize the action panel on a 'Knot & start' step. */
+.step-action-knot {
+  background: var(--accent);
+  color: var(--surface);
+}
+.step-action-knot .step-action-k { color: var(--surface); opacity: 0.85; }
+
+/* Add a small legend item style for the new knot marker. */
+.dot-knot {
+  width: 10px;
+  height: 10px;
+  border-radius: 99px;
+  background: var(--accent);
+  border: 2px solid var(--accent);
+  box-shadow: inset 0 0 0 2px var(--surface);
+}

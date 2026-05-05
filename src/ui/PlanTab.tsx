@@ -147,6 +147,22 @@ export default function PlanTab({ state }: Props) {
     return t;
   }, [activePlan, step]);
 
+  /** Indices of every 'start' step — drawn as ticks on the step-bar slider. */
+  const threadStartIndices = useMemo(() => {
+    if (!activePlan) return [] as number[];
+    const out: number[] = [];
+    for (let i = 0; i < activePlan.steps.length; i++) {
+      if (activePlan.steps[i].kind === 'start') out.push(i);
+    }
+    return out;
+  }, [activePlan]);
+
+  /** True when the current step has just executed a 'start' step. */
+  const onThreadStart = (() => {
+    if (!activePlan || step <= 0) return false;
+    return activePlan.steps[step - 1]?.kind === 'start';
+  })();
+
   useEffect(() => {
     setActivePlanIdx(0);
     setStep(plans[0]?.steps.length ?? 0);
@@ -196,12 +212,27 @@ export default function PlanTab({ state }: Props) {
     );
     let lastNeedle: [number, number] | null = null;
 
+    // Endpoint of every finished thread up to `step` — the corner at
+    // which the needle was tied off before the next thread restart. Used
+    // to draw "knot" markers on both canvases so a stitcher can see at
+    // a glance where one thread stopped and another began.
+    const threadEnds: Array<{ corner: [number, number]; thread: number }> = [];
+    let needleAtPriorStart = false; // true when the most recent step was 'start'
+
     const stepsToShow = activePlan.steps.slice(0, step);
     let currentThread = -1;
+    let lastCornerInThread: [number, number] | null = null;
     for (const s of stepsToShow) {
       if (s.kind === 'start') {
+        // Record the previous thread's end (if any) BEFORE incrementing
+        // the thread counter.
+        if (lastCornerInThread && currentThread >= 0) {
+          threadEnds.push({ corner: lastCornerInThread, thread: currentThread });
+        }
         currentThread++;
         lastNeedle = s.to;
+        lastCornerInThread = s.to;
+        needleAtPriorStart = true;
       } else if (s.kind === 'front') {
         if (s.cell) {
           const [cx, cy] = s.cell;
@@ -212,6 +243,8 @@ export default function PlanTab({ state }: Props) {
           }
         }
         lastNeedle = s.to;
+        lastCornerInThread = s.to;
+        needleAtPriorStart = false;
       } else if (s.kind === 'back' && s.from) {
         const [x1, y1] = s.from;
         const [x2, y2] = s.to;
@@ -223,8 +256,15 @@ export default function PlanTab({ state }: Props) {
         bctx.lineTo(x2 * cs, y2 * cs);
         bctx.stroke();
         lastNeedle = s.to;
+        lastCornerInThread = s.to;
+        needleAtPriorStart = false;
       }
     }
+
+    // If the cursor stopped MID-PLAN inside an active thread, the current
+    // thread's end isn't known yet — only completed threads get markers.
+    // (lastCornerInThread is the live cursor; threadEnds is for tied-off
+    // threads only.)
 
     for (let y = 0; y < pattern.height; y++) {
       for (let x = 0; x < pattern.width; x++) {
@@ -259,12 +299,50 @@ export default function PlanTab({ state }: Props) {
       }
     }
 
+    // Knot markers at every finished-thread endpoint. Open red ring on
+    // the front (visible), filled red dot on the back (where the actual
+    // tie-off happens). These mean "this thread ended here; new thread
+    // starts elsewhere." Drawn before the live cursor so the cursor
+    // overlays them when they coincide.
+    const KNOT_R = 5;
+    const ACCENT = '#9b2a2a'; // matches --accent (madder red)
+    for (const { corner } of threadEnds) {
+      const [cx, cy] = corner;
+      // Front: open ring (don't obscure stitch art)
+      fctx.strokeStyle = ACCENT;
+      fctx.lineWidth = 2;
+      fctx.beginPath();
+      fctx.arc(cx * cs, cy * cs, KNOT_R, 0, Math.PI * 2);
+      fctx.stroke();
+      // Back: filled dot (knots really are on the back)
+      bctx.fillStyle = ACCENT;
+      bctx.beginPath();
+      bctx.arc(cx * cs, cy * cs, KNOT_R - 1, 0, Math.PI * 2);
+      bctx.fill();
+    }
+
     if (lastNeedle) {
-      for (const ctx of [fctx, bctx]) {
-        ctx.fillStyle = '#185FA5';
-        ctx.beginPath();
-        ctx.arc(lastNeedle[0] * cs, lastNeedle[1] * cs, 4, 0, Math.PI * 2);
-        ctx.fill();
+      // Cursor: distinct visual on a fresh thread vs. mid-thread.
+      if (needleAtPriorStart) {
+        // Just-started thread — show as a filled red madder ring with
+        // a white center, "this thread begins HERE."
+        for (const ctx of [fctx, bctx]) {
+          ctx.fillStyle = ACCENT;
+          ctx.beginPath();
+          ctx.arc(lastNeedle[0] * cs, lastNeedle[1] * cs, 6, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#fff';
+          ctx.beginPath();
+          ctx.arc(lastNeedle[0] * cs, lastNeedle[1] * cs, 2.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        for (const ctx of [fctx, bctx]) {
+          ctx.fillStyle = '#185FA5';
+          ctx.beginPath();
+          ctx.arc(lastNeedle[0] * cs, lastNeedle[1] * cs, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
     }
   }, [pattern, activePlan, step, activeThread, palette]);
@@ -477,8 +555,17 @@ export default function PlanTab({ state }: Props) {
               className="btn-ghost btn-sm"
               onClick={() => setStep((s) => Math.max(0, s - 1))}
               disabled={!activePlan}
+              title="Previous step"
             >
               ←
+            </button>
+            <button
+              className="btn-ghost btn-sm"
+              onClick={() => prevThreadStart(threadStartIndices, step, setStep)}
+              disabled={!activePlan || threadStartIndices.length === 0}
+              title="Jump to previous thread start"
+            >
+              ⇤
             </button>
             <button
               className={`${playing ? 'btn-ghost' : 'btn-primary'} btn-sm`}
@@ -487,13 +574,65 @@ export default function PlanTab({ state }: Props) {
             >
               {playing ? '⏸ Pause' : '▶ Play'}
             </button>
-            <input
-              type="range"
-              min={0}
-              max={activePlan?.steps.length ?? 0}
-              value={step}
-              onChange={(e) => setStep(parseInt(e.target.value, 10))}
-            />
+            <button
+              className="btn-ghost btn-sm"
+              onClick={() => nextThreadStart(threadStartIndices, step, setStep)}
+              disabled={!activePlan || threadStartIndices.length === 0}
+              title="Jump to next thread start"
+            >
+              ⇥
+            </button>
+            <div
+              style={{
+                flex: 1,
+                position: 'relative',
+                display: 'flex',
+                alignItems: 'center',
+              }}
+            >
+              <input
+                type="range"
+                min={0}
+                max={activePlan?.steps.length ?? 0}
+                value={step}
+                onChange={(e) => setStep(parseInt(e.target.value, 10))}
+                style={{ width: '100%' }}
+              />
+              {/* Thread-start tick overlay — small accent marks at every 'start' step. */}
+              {activePlan && activePlan.steps.length > 0 && (
+                <div
+                  aria-hidden="true"
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    pointerEvents: 'none',
+                    height: 14,
+                  }}
+                >
+                  {threadStartIndices.map((idx) => {
+                    const pct = (idx / activePlan.steps.length) * 100;
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          position: 'absolute',
+                          left: `${pct}%`,
+                          top: 0,
+                          width: 2,
+                          height: '100%',
+                          background: 'var(--accent)',
+                          opacity: 0.5,
+                          transform: 'translateX(-1px)',
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </div>
             <span className="step-count info-k">
               {step} / {activePlan?.steps.length ?? 0}
             </span>
@@ -503,6 +642,7 @@ export default function PlanTab({ state }: Props) {
                 setStep((s) => Math.min(activePlan?.steps.length ?? 0, s + 1))
               }
               disabled={!activePlan}
+              title="Next step"
             >
               →
             </button>
@@ -528,6 +668,10 @@ export default function PlanTab({ state }: Props) {
             <div>
               <span className="dot dot-thread" />
               Current thread
+            </div>
+            <div>
+              <span className="dot dot-knot" />
+              Thread end / start
             </div>
           </div>
         </section>
@@ -819,7 +963,16 @@ export default function PlanTab({ state }: Props) {
                 </div>
               )}
             </div>
-            <div className="step-action">{actionText}</div>
+            <div
+              className={`step-action${onThreadStart ? ' step-action-knot' : ''}`}
+            >
+              {onThreadStart && (
+                <span className="step-action-k">
+                  ● New thread {activeThread + 1} of {totalThreads}
+                </span>
+              )}
+              <span>{actionText}</span>
+            </div>
           </div>
         </aside>
       </div>
@@ -834,6 +987,43 @@ interface WeightSliderProps {
   step: number;
   value: number;
   onChange: (v: number) => void;
+}
+
+/**
+ * Jump the step cursor to the next 'start' step strictly after the
+ * current cursor position. If we're already past the last one, advance
+ * to the end of the plan.
+ */
+function nextThreadStart(
+  starts: number[],
+  current: number,
+  setStep: (v: number) => void,
+): void {
+  for (const i of starts) {
+    if (i + 1 > current) {
+      setStep(i + 1);
+      return;
+    }
+  }
+}
+
+/**
+ * Jump to the previous 'start' step strictly before the current cursor
+ * (so repeated taps walk backward through threads).
+ */
+function prevThreadStart(
+  starts: number[],
+  current: number,
+  setStep: (v: number) => void,
+): void {
+  for (let k = starts.length - 1; k >= 0; k--) {
+    const i = starts[k];
+    if (i + 1 < current) {
+      setStep(i + 1);
+      return;
+    }
+  }
+  setStep(0);
 }
 
 function WeightSlider({ label, min, max, step, value, onChange }: WeightSliderProps) {
