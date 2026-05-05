@@ -366,30 +366,46 @@ export default function GroundTruthTab({ state, showToast }: Props) {
   );
 
   return (
-    <div className="card">
-      <p className="muted" style={{ margin: '0 0 12px' }}>
+    <section className="panel">
+      <div className="panel-h">
+        <span>Ground truth recorder</span>
+        <span dir="rtl">مسجّل المرجع</span>
+      </div>
+      <p className="gt-explainer">
         Click corners on the chart in the order you'd actually stitch them. The recorder pairs
         them up into stitches automatically. Click the <strong>same corner twice</strong> to mark
-        a thread restart.
+        a thread restart. Use <strong>Start part</strong> to mark a logical unit (e.g. "stalk",
+        "bean", "leaf"). Points clicked while a part is active belong to it. The same part shape
+        can later be recognized in other charts and stitched the same way.
       </p>
-      <p className="muted" style={{ margin: '0 0 12px' }}>
-        Use <strong>Start part</strong> to mark a logical unit (e.g. "stalk", "bean", "leaf").
-        Points clicked while a part is active belong to it. The same part shape can later be
-        recognized in other charts and stitched the same way.
-      </p>
-      <div className="toolbar">
-        <button onClick={onReset}>Reset recording</button>
-        <button onClick={onUndo} disabled={points.length === 0}>
+      <div
+        className="toolbar"
+        style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}
+      >
+        <button className="btn-ghost btn-sm" onClick={onReset}>
+          Reset recording
+        </button>
+        <button
+          className="btn-ghost btn-sm"
+          onClick={onUndo}
+          disabled={points.length === 0}
+        >
           Undo last point
         </button>
         {activePartIdx === null ? (
-          <button onClick={onStartPart}>Start part</button>
+          <button className="btn-ghost btn-sm" onClick={onStartPart}>
+            Start part
+          </button>
         ) : (
-          <button onClick={onEndPart} className="primary">
+          <button className="btn-primary btn-sm" onClick={onEndPart}>
             End part: {parts[activePartIdx]?.name}
           </button>
         )}
-        <button className="primary" style={{ marginLeft: 'auto' }} onClick={onSave}>
+        <button
+          className="btn-primary btn-sm"
+          style={{ marginLeft: 'auto' }}
+          onClick={onSave}
+        >
           Save as ground truth
         </button>
       </div>
@@ -499,6 +515,6 @@ export default function GroundTruthTab({ state, showToast }: Props) {
           )}
         </div>
       </div>
-    </div>
+    </section>
   );
 }

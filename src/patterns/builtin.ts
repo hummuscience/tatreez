@@ -5,6 +5,8 @@ const c = (rows: number[][]): ColorIndex[][] => rows.map((r) => r.map((v) => v a
 export const BUILTIN_PATTERNS: Record<string, Pattern> = {
   coffeeBean: {
     name: 'Coffee Bean (Habbet Binn)',
+    nameAr: 'حبة البن',
+    regionAr: 'الخليل',
     width: 19,
     height: 46,
     cells: c([
@@ -59,6 +61,8 @@ export const BUILTIN_PATTERNS: Record<string, Pattern> = {
   },
   cypressTree: {
     name: 'Cypress Tree (Sarw)',
+    nameAr: 'السرو',
+    regionAr: 'رام الله',
     width: 11,
     height: 28,
     cells: c([
@@ -95,6 +99,8 @@ export const BUILTIN_PATTERNS: Record<string, Pattern> = {
   },
   moonOfBethlehem: {
     name: 'Najma (Star)',
+    nameAr: 'النجمة',
+    regionAr: 'بيت لحم',
     width: 15,
     height: 15,
     cells: c([
@@ -118,6 +124,8 @@ export const BUILTIN_PATTERNS: Record<string, Pattern> = {
   },
   oldMansTeeth: {
     name: "Old Man's Teeth (Snan El 'Ajouz)",
+    nameAr: 'سنان العجوز',
+    regionAr: 'الجليل',
     width: 10,
     height: 3,
     cells: c([

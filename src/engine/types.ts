@@ -67,6 +67,18 @@ export interface Pattern {
    * Optional — built-in and user-drawn patterns omit this.
    */
   source?: PatternSource;
+  /**
+   * Arabic display name (e.g. "السرو" for the Cypress Tree). Optional.
+   * The UI shows this alongside the Latin `name` with `dir="rtl"`. The
+   * search index also matches against this field as raw text (no
+   * lowercasing — Arabic is case-insensitive natively).
+   */
+  nameAr?: string;
+  /**
+   * Arabic region label (e.g. "رام الله" for Ramallah). Optional.
+   * Mirrors the existing `source.region` (English) when both are present.
+   */
+  regionAr?: string;
 }
 
 export interface Score {

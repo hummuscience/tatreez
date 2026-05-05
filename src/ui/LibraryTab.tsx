@@ -29,16 +29,19 @@ function matchesQuery(p: Pattern, q: string): boolean {
   if (!q) return true;
   const ql = q.toLowerCase();
   if (norm(p.name).includes(ql)) return true;
+  // Builtin Arabic — substring on raw value (don't lowercase RTL).
+  if ((p.nameAr ?? '').includes(q)) return true;
+  if ((p.regionAr ?? '').includes(q)) return true;
   const src = p.source;
-  if (!src) return false;
-  if (norm(src.originalName).includes(ql)) return true;
-  if (norm(src.region).includes(ql)) return true;
-  // Arabic — substring on the raw value (don't lowercase RTL).
-  if ((src.arabicName ?? '').includes(q)) return true;
+  if (src) {
+    if (norm(src.originalName).includes(ql)) return true;
+    if (norm(src.region).includes(ql)) return true;
+    if ((src.arabicName ?? '').includes(q)) return true;
+  }
   return false;
 }
 
-/** Number of non-empty palette entries — patterns with N colours show N. */
+/** Number of non-empty palette entries. */
 function colorCount(p: Pattern): number {
   if (!p.palette) return 0;
   let n = 0;
@@ -46,7 +49,6 @@ function colorCount(p: Pattern): number {
   return n;
 }
 
-/** Sum of painted (non-zero) cells. Proxy for stitching effort. */
 function paintedCells(p: Pattern): number {
   let n = 0;
   for (const row of p.cells) {
@@ -57,7 +59,7 @@ function paintedCells(p: Pattern): number {
 
 type SizeBucket = 'small' | 'medium' | 'large';
 type ComplexityBucket = 'simple' | 'medium' | 'complex';
-type ColorBucket = 1 | 2 | 3 | 4 | 5; // 5 means "5 or more"
+type ColorBucket = 1 | 2 | 3 | 4 | 5;
 
 function sizeBucket(p: Pattern): SizeBucket {
   const m = Math.max(p.width, p.height);
@@ -71,7 +73,6 @@ function complexityBucket(painted: number): ComplexityBucket {
   if (painted <= 1000) return 'medium';
   return 'complex';
 }
-
 
 interface Props {
   onLoad: (pattern: Pattern, patternKey: string) => void;
@@ -89,11 +90,11 @@ export default function LibraryTab({ onLoad, showToast }: Props) {
   const [archiveRegion, setArchiveRegion] = useState<string | null>(null);
   const [archiveColors, setArchiveColors] = useState<ColorBucket | null>(null);
   const [archiveSize, setArchiveSize] = useState<SizeBucket | null>(null);
-  const [archiveComplexity, setArchiveComplexity] = useState<ComplexityBucket | null>(null);
+  const [archiveComplexity, setArchiveComplexity] = useState<ComplexityBucket | null>(
+    null,
+  );
   const [archiveShowAll, setArchiveShowAll] = useState(false);
 
-  // Pre-compute archive entries with derived facets (color count, painted
-  // cells) so we don't recompute per render. Doing this once at mount.
   const archiveData = useMemo(() => {
     return Object.entries(TIRAZAIN_ARCHIVE).map(([slug, p]) => {
       const painted = paintedCells(p);
@@ -118,13 +119,10 @@ export default function LibraryTab({ onLoad, showToast }: Props) {
     return [...counts.entries()].sort((a, b) => b[1] - a[1]);
   }, [archiveEntries]);
 
-  // Filter entries by all active facets. Each filter is independent;
-  // an entry must pass every active filter to be included.
   const archiveFiltered = useMemo(() => {
     return archiveEntries.filter((e) => {
       if (archiveRegion && e.pattern.source?.region !== archiveRegion) return false;
       if (archiveColors !== null) {
-        // Bucket 5 means "5 or more"; lower buckets are exact match.
         if (archiveColors === 5 ? e.colors < 5 : e.colors !== archiveColors) {
           return false;
         }
@@ -134,7 +132,14 @@ export default function LibraryTab({ onLoad, showToast }: Props) {
       if (!matchesQuery(e.pattern, archiveQuery)) return false;
       return true;
     });
-  }, [archiveEntries, archiveQuery, archiveRegion, archiveColors, archiveSize, archiveComplexity]);
+  }, [
+    archiveEntries,
+    archiveQuery,
+    archiveRegion,
+    archiveColors,
+    archiveSize,
+    archiveComplexity,
+  ]);
 
   const archiveIsFiltered =
     archiveQuery.length > 0 ||
@@ -143,9 +148,10 @@ export default function LibraryTab({ onLoad, showToast }: Props) {
     archiveSize !== null ||
     archiveComplexity !== null;
 
-  const archiveVisible = archiveShowAll || archiveIsFiltered
-    ? archiveFiltered
-    : archiveFiltered.slice(0, ARCHIVE_PAGE_SIZE);
+  const archiveVisible =
+    archiveShowAll || archiveIsFiltered
+      ? archiveFiltered
+      : archiveFiltered.slice(0, ARCHIVE_PAGE_SIZE);
 
   const archiveClearAll = () => {
     setArchiveQuery('');
@@ -188,7 +194,6 @@ export default function LibraryTab({ onLoad, showToast }: Props) {
       showToast(
         `Imported ${result.pattern.width}×${result.pattern.height} (${result.stitchCount} stitches)${extraMsg}`,
       );
-      // Open the newly-imported pattern in the editor flow
       onLoad(result.pattern, savedPatternKey(id));
     } catch (err) {
       showToast(
@@ -197,348 +202,376 @@ export default function LibraryTab({ onLoad, showToast }: Props) {
     }
   };
 
+  const builtinCount = Object.keys(BUILTIN_PATTERNS).length;
+
   return (
-    <div>
-      <p className="section-label">Built-in patterns</p>
-      <div className="card" style={{ marginBottom: 24 }}>
-        <div className="lib-grid">
+    <div className="lib">
+      {/* ---- Built-in patterns ---- */}
+      <section>
+        <div className="lib-section-head">
+          <h2 className="section-h">
+            <span>Built-in patterns</span>
+            <span className="section-h-ar" dir="rtl">
+              الأنماط المدمجة
+            </span>
+          </h2>
+          <span className="section-meta">
+            {builtinCount} canonical motifs
+          </span>
+        </div>
+        <div className="grid">
           {Object.entries(BUILTIN_PATTERNS).map(([id, p]) => {
             const key = builtinPatternKey(id);
+            const hasGt = gtKeys.has(key);
             return (
-              <div
-                className="lib-item"
+              <PatternCard
                 key={id}
+                pattern={p}
                 onClick={() => onLoad(clonePattern(p), key)}
-              >
-                <PatternThumb pattern={p} />
-                <div className="name">{p.name}</div>
-                <div className="meta">
-                  {p.width}×{p.height}
-                  {gtKeys.has(key) && (
-                    <>
-                      {' '}
-                      <span className="pill success">GT</span>
-                    </>
-                  )}
-                </div>
-              </div>
+                badge={hasGt ? 'GT' : undefined}
+              />
             );
           })}
         </div>
-      </div>
+      </section>
 
+      {/* ---- Tirazain Archive ---- */}
       {archiveEntries.length > 0 && (
-        <>
-          <p className="section-label">
-            Tirazain Archive{' '}
-            <a
-              href="https://tirazain.com/archive/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="muted"
-              style={{ fontSize: 12, fontWeight: 'normal', marginLeft: 8 }}
-            >
-              tirazain.com/archive →
-            </a>
-          </p>
-          <div className="card" style={{ marginBottom: 24 }}>
-            <p className="muted" style={{ margin: '0 0 12px', fontSize: 12 }}>
-              Patterns from the Tirazain community archive of Palestinian
-              tatreez. Each pattern keeps a link back to its source page.
-            </p>
+        <section>
+          <div className="lib-section-head">
+            <div>
+              <h2 className="section-h">
+                <span>Tirazain Archive</span>
+                <span className="section-h-ar" dir="rtl">
+                  أرشيف طرازين
+                </span>
+              </h2>
+              <p className="section-sub">
+                Patterns from the{' '}
+                <a
+                  href="https://tirazain.com/archive/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Tirazain community archive
+                </a>{' '}
+                of Palestinian tatreez. Each pattern keeps a link back to its
+                source page.
+              </p>
+            </div>
+            <span className="section-meta">
+              {archiveIsFiltered
+                ? `${archiveFiltered.length} of ${archiveEntries.length}`
+                : `${archiveEntries.length} patterns`}
+            </span>
+          </div>
 
-            {/* Search + count + clear row */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                marginBottom: 8,
-                flexWrap: 'wrap',
-              }}
-            >
+          {/* Filter panel */}
+          <div className="filters">
+            <label className="filter-search">
+              <SearchIcon />
               <input
                 type="search"
                 placeholder="Search by name, region, Arabic name…"
                 value={archiveQuery}
                 onChange={(e) => setArchiveQuery(e.target.value)}
-                style={{
-                  flex: '1 1 280px',
-                  minWidth: 200,
-                  padding: '6px 10px',
-                  fontSize: 13,
-                }}
                 aria-label="Search Tirazain archive"
               />
-              <span className="muted" style={{ fontSize: 12 }}>
-                {archiveIsFiltered
-                  ? `${archiveFiltered.length} of ${archiveEntries.length}`
-                  : `${archiveEntries.length} patterns`}
-              </span>
               {archiveIsFiltered && (
                 <button
+                  type="button"
+                  className="btn-ghost btn-sm"
                   onClick={archiveClearAll}
-                  style={{ fontSize: 11, padding: '2px 8px' }}
                 >
-                  Clear all
+                  Clear
                 </button>
               )}
-            </div>
+            </label>
 
-            {/* Filter rows: region / colors / size / complexity */}
-            <FilterRow label="Region">
-              {archiveRegions.map(([region, count]) => {
-                const active = archiveRegion === region;
-                return (
-                  <FilterChip
-                    key={region}
-                    label={`${region} (${count})`}
-                    active={active}
-                    onClick={() => setArchiveRegion(active ? null : region)}
-                  />
-                );
-              })}
+            <FilterRow label="Region" labelAr="المنطقة">
+              {archiveRegions.map(([region, count]) => (
+                <Chip
+                  key={region}
+                  active={archiveRegion === region}
+                  onClick={() =>
+                    setArchiveRegion(archiveRegion === region ? null : region)
+                  }
+                >
+                  {region} <span className="chip-count">{count}</span>
+                </Chip>
+              ))}
             </FilterRow>
 
-            <FilterRow label="Colors">
-              {([1, 2, 3, 4, 5] as ColorBucket[]).map((n) => {
-                const active = archiveColors === n;
-                return (
-                  <FilterChip
-                    key={n}
-                    label={n === 5 ? '5+' : String(n)}
-                    active={active}
-                    onClick={() => setArchiveColors(active ? null : n)}
-                  />
-                );
-              })}
+            <FilterRow label="Colors" labelAr="الألوان">
+              {([1, 2, 3, 4, 5] as ColorBucket[]).map((n) => (
+                <Chip
+                  key={n}
+                  active={archiveColors === n}
+                  onClick={() =>
+                    setArchiveColors(archiveColors === n ? null : n)
+                  }
+                >
+                  {n === 5 ? '5+' : n}
+                </Chip>
+              ))}
             </FilterRow>
 
-            <FilterRow label="Size">
+            <FilterRow label="Size" labelAr="الحجم">
               {(
                 [
                   ['small', 'Small (≤30)'],
                   ['medium', 'Medium (31–60)'],
                   ['large', 'Large (>60)'],
                 ] as Array<[SizeBucket, string]>
-              ).map(([bucket, label]) => {
-                const active = archiveSize === bucket;
-                return (
-                  <FilterChip
-                    key={bucket}
-                    label={label}
-                    active={active}
-                    onClick={() => setArchiveSize(active ? null : bucket)}
-                  />
-                );
-              })}
+              ).map(([bucket, label]) => (
+                <Chip
+                  key={bucket}
+                  active={archiveSize === bucket}
+                  onClick={() =>
+                    setArchiveSize(archiveSize === bucket ? null : bucket)
+                  }
+                >
+                  {label}
+                </Chip>
+              ))}
             </FilterRow>
 
-            <FilterRow label="Complexity">
+            <FilterRow label="Complexity" labelAr="التعقيد">
               {(
                 [
                   ['simple', 'Simple'],
                   ['medium', 'Medium'],
                   ['complex', 'Complex'],
                 ] as Array<[ComplexityBucket, string]>
-              ).map(([bucket, label]) => {
-                const active = archiveComplexity === bucket;
-                return (
-                  <FilterChip
-                    key={bucket}
-                    label={label}
-                    active={active}
-                    onClick={() => setArchiveComplexity(active ? null : bucket)}
-                  />
-                );
-              })}
+              ).map(([bucket, label]) => (
+                <Chip
+                  key={bucket}
+                  active={archiveComplexity === bucket}
+                  onClick={() =>
+                    setArchiveComplexity(
+                      archiveComplexity === bucket ? null : bucket,
+                    )
+                  }
+                >
+                  {label}
+                </Chip>
+              ))}
             </FilterRow>
-
-            {archiveFiltered.length === 0 ? (
-              <p className="empty-hint">No patterns match.</p>
-            ) : (
-              <>
-                <div className="lib-grid">
-                  {archiveVisible.map(({ slug, pattern: p }) => {
-                    const key = archivePatternKey(slug);
-                    return (
-                      <div
-                        className="lib-item"
-                        key={slug}
-                        onClick={() => onLoad(clonePattern(p), key)}
-                      >
-                        <PatternThumb pattern={p} />
-                        <div className="name">{p.name}</div>
-                        <div className="meta">
-                          {p.width}×{p.height}
-                          {p.source?.region && (
-                            <>
-                              {' · '}
-                              <span>{p.source.region}</span>
-                            </>
-                          )}
-                        </div>
-                        {p.source?.url && (
-                          <a
-                            href={p.source.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="muted"
-                            style={{
-                              fontSize: 11,
-                              marginTop: 4,
-                              display: 'block',
-                            }}
-                          >
-                            source ↗
-                          </a>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-                {!archiveIsFiltered &&
-                  !archiveShowAll &&
-                  archiveFiltered.length > ARCHIVE_PAGE_SIZE && (
-                    <div
-                      style={{
-                        textAlign: 'center',
-                        marginTop: 12,
-                      }}
-                    >
-                      <button
-                        onClick={() => setArchiveShowAll(true)}
-                        style={{ fontSize: 12 }}
-                      >
-                        Show all {archiveFiltered.length}
-                      </button>
-                    </div>
-                  )}
-              </>
-            )}
           </div>
-        </>
+
+          {archiveFiltered.length === 0 ? (
+            <p className="empty-hint">No patterns match.</p>
+          ) : (
+            <>
+              <div className="grid">
+                {archiveVisible.map(({ slug, pattern: p }) => (
+                  <PatternCard
+                    key={slug}
+                    pattern={p}
+                    onClick={() =>
+                      onLoad(clonePattern(p), archivePatternKey(slug))
+                    }
+                  />
+                ))}
+              </div>
+              {!archiveIsFiltered &&
+                !archiveShowAll &&
+                archiveFiltered.length > ARCHIVE_PAGE_SIZE && (
+                  <div style={{ textAlign: 'center', marginTop: 14 }}>
+                    <button
+                      className="btn-ghost btn-sm"
+                      onClick={() => setArchiveShowAll(true)}
+                    >
+                      Show all {archiveFiltered.length}
+                    </button>
+                  </div>
+                )}
+            </>
+          )}
+        </section>
       )}
 
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          marginBottom: 8,
-          flexWrap: 'wrap',
-        }}
-      >
-        <p className="section-label" style={{ margin: 0 }}>
-          Your saved patterns
-        </p>
-        <input
-          ref={oxsInputRef}
-          type="file"
-          accept=".oxs,.xml,application/xml,text/xml"
-          style={{ display: 'none' }}
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) handleOxsFile(f);
-            e.target.value = '';
-          }}
-        />
-        <button
-          onClick={() => oxsInputRef.current?.click()}
-          title="Import a chart from an Open X-Stitch (.oxs) file"
-        >
-          Import OXS file…
-        </button>
-      </div>
-      <div className="card" style={{ minHeight: 60 }}>
+      {/* ---- Saved patterns ---- */}
+      <section>
+        <div className="lib-section-head">
+          <h2 className="section-h">
+            <span>Your saved patterns</span>
+            <span className="section-h-ar" dir="rtl">
+              الأنماط المحفوظة
+            </span>
+          </h2>
+          <input
+            ref={oxsInputRef}
+            type="file"
+            accept=".oxs,.xml,application/xml,text/xml"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) handleOxsFile(f);
+              e.target.value = '';
+            }}
+          />
+          <button
+            className="btn-ghost btn-sm"
+            onClick={() => oxsInputRef.current?.click()}
+            title="Import a chart from an Open X-Stitch (.oxs) file"
+          >
+            Import OXS file…
+          </button>
+        </div>
         {saved.length === 0 ? (
           <p className="empty-hint">
-            No saved patterns yet. Paint one in the Editor and click <em>save to library</em>.
+            No saved patterns yet. Paint one in the Editor and click{' '}
+            <em>save to library</em>.
           </p>
         ) : (
-          <div className="lib-grid">
+          <div className="grid">
             {saved.map((entry) => {
               const key = savedPatternKey(entry.id);
               const name = entry.pattern.name || 'Untitled';
               return (
-                <div
-                  className="lib-item"
+                <PatternCard
                   key={entry.id}
+                  pattern={entry.pattern}
                   onClick={() => onLoad(clonePattern(entry.pattern), key)}
-                >
-                  <PatternThumb pattern={entry.pattern} />
-                  <div className="name">{name}</div>
-                  <div className="meta">
-                    {entry.pattern.width}×{entry.pattern.height}
-                    {gtKeys.has(key) && (
-                      <>
-                        {' '}
-                        <span className="pill success">GT</span>
-                      </>
-                    )}
-                  </div>
-                  <button
-                    style={{ marginTop: 6, fontSize: 11, padding: '2px 8px' }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDelete(entry.id, name);
-                    }}
-                  >
-                    Delete
-                  </button>
-                </div>
+                  badge={gtKeys.has(key) ? 'GT' : undefined}
+                  onDelete={() => handleDelete(entry.id, name)}
+                />
               );
             })}
           </div>
         )}
-      </div>
+      </section>
     </div>
   );
 }
 
-/**
- * Single row in the filter stack: a label on the left, chips on the right.
- * Keeps row spacing/alignment consistent across the four filter rows.
- */
-function FilterRow({ label, children }: { label: string; children: React.ReactNode }) {
+// ---------- Sub-components ----------
+
+interface PatternCardProps {
+  pattern: Pattern;
+  onClick: () => void;
+  badge?: string;
+  onDelete?: () => void;
+}
+
+function PatternCard({ pattern: p, onClick, badge, onDelete }: PatternCardProps) {
+  const arabicName = p.nameAr ?? p.source?.arabicName ?? '';
+  const region = p.source?.region;
+  const sourceUrl = p.source?.url;
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'baseline',
-        gap: 8,
-        marginBottom: 6,
-        flexWrap: 'wrap',
-      }}
-    >
-      <span
-        className="muted"
-        style={{ fontSize: 11, minWidth: 70, fontWeight: 600 }}
-      >
-        {label}:
-      </span>
-      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{children}</div>
+    <button className="card pat-card" onClick={onClick} type="button">
+      <div className="pat-thumb-wrap">
+        <PatternThumb pattern={p} />
+      </div>
+      <div className="pat-meta">
+        <div className="pat-name">{p.name}</div>
+        {arabicName && (
+          <div className="pat-name-ar" dir="rtl">
+            {arabicName}
+          </div>
+        )}
+        <div className="pat-foot">
+          <span>
+            {p.width}×{p.height}
+          </span>
+          {region && (
+            <>
+              <span className="pat-dot">·</span>
+              <span>{region}</span>
+            </>
+          )}
+          {badge && <span className="pat-badge">{badge}</span>}
+        </div>
+        {sourceUrl && (
+          <a
+            href={sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="pat-foot"
+            style={{ marginTop: 0, textTransform: 'none', fontSize: 10 }}
+          >
+            source ↗
+          </a>
+        )}
+        {onDelete && (
+          <button
+            type="button"
+            className="btn-ghost btn-sm"
+            style={{ marginTop: 6 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+          >
+            Delete
+          </button>
+        )}
+      </div>
+    </button>
+  );
+}
+
+function FilterRow({
+  label,
+  labelAr,
+  children,
+}: {
+  label: string;
+  labelAr?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="filter-row">
+      <div className="filter-label">
+        <span>{label}</span>
+        {labelAr && (
+          <span className="filter-label-ar" dir="rtl">
+            {labelAr}
+          </span>
+        )}
+      </div>
+      <div className="filter-chips">{children}</div>
     </div>
   );
 }
 
-function FilterChip({
-  label,
+function Chip({
+  children,
   active,
   onClick,
 }: {
-  label: string;
+  children: React.ReactNode;
   active: boolean;
   onClick: () => void;
 }) {
   return (
     <button
+      type="button"
+      className={`chip${active ? ' chip-active' : ''}`}
       onClick={onClick}
-      className={active ? 'primary' : ''}
-      style={{ fontSize: 11, padding: '2px 8px' }}
     >
-      {label}
+      {children}
     </button>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="11" cy="11" r="7" />
+      <path d="m21 21-4.3-4.3" />
+    </svg>
   );
 }

@@ -320,9 +320,13 @@ export default function ImportTab({ onSendToEditor, showToast }: Props) {
     : null;
 
   return (
-    <div>
-      <div className="card" style={{ marginBottom: 16 }}>
-        <p className="muted" style={{ margin: '0 0 12px' }}>
+    <div className="import">
+      <section className="panel">
+        <div className="panel-h">
+          <span>Import from image</span>
+          <span dir="rtl">استيراد من صورة</span>
+        </div>
+        <p className="section-sub" style={{ marginTop: 0, marginBottom: 14 }}>
           Drop a chart screenshot. The detector finds the chart border, the gridlines, and
           clusters the cell colours. <strong>Drag the red crop box</strong> to refine which
           region of the image is the chart, then send the pattern to the Editor.
@@ -374,12 +378,12 @@ export default function ImportTab({ onSendToEditor, showToast }: Props) {
             Auto-crop
           </button>
           <button
-            className="primary"
+            className="btn-primary btn-sm"
             style={{ marginLeft: 'auto' }}
             disabled={!detection || busy}
             onClick={sendToEditor}
           >
-            Send to editor
+            Send to editor →
           </button>
         </div>
 
@@ -594,7 +598,7 @@ export default function ImportTab({ onSendToEditor, showToast }: Props) {
             Remove image
           </button>
         )}
-      </div>
+      </section>
     </div>
   );
 }
