@@ -263,6 +263,7 @@ function DesignComposer({
   onPlanArea: (pattern: Pattern, key: string) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const canvasScrollRef = useRef<HTMLDivElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [wrapW, setWrapW] = useState(640);
   const [zoom, setZoom] = useState(1);
@@ -335,13 +336,27 @@ function DesignComposer({
   const interactionRef = useRef<Interaction | null>(null);
 
   // Canvas fills the residual column width; height follows the cloth aspect
-  // ratio, capped so very tall designs don't blow out the layout.
+  // ratio. We measure the *displayed* canvas-scroll height (which the CSS
+  // caps at max-height) so the motif arms hug the canvas as actually shown,
+  // not the raw backing height.
   useEffect(() => {
     const el = wrapRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver((entries) => {
       const w = entries[0]?.contentRect.width;
       if (w && w > 0) setWrapW(Math.floor(w));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const [displayedCanvasH, setDisplayedCanvasH] = useState(420);
+  useEffect(() => {
+    const el = canvasScrollRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver((entries) => {
+      const h = entries[0]?.contentRect.height;
+      if (h && h > 0) setDisplayedCanvasH(Math.floor(h));
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -883,7 +898,9 @@ function DesignComposer({
   // beneath the whole band. Counts derive from how many ~106px cards fit each
   // region's height; overflow is reached by narrowing the filters.
   const CARD_PX = 106;
-  const canvasPx = canvasH - GUTTER;
+  // Use the canvas's *displayed* height (CSS-capped) so the arms match what's
+  // on screen — a short design gives short arms, a tall one gives tall arms.
+  const canvasPx = displayedCanvasH;
   const leftCount = Math.max(3, Math.floor(canvasPx / CARD_PX));
   // Right column starts below the inspector, so it has less height than the
   // canvas; estimate the inspector at ~300px.
@@ -1005,7 +1022,7 @@ function DesignComposer({
       <div className="design-body-l">
         {/* Cap the left column to the canvas's displayed height so the bottom
             strip hugs the canvas bottom instead of floating far below it. */}
-        <aside className="design-motif-col" style={{ maxHeight: canvasH }}>
+        <aside className="design-motif-col" style={{ maxHeight: displayedCanvasH }}>
           {leftMotifs.length === 0 ? (
             <p className="empty-hint">No patterns match.</p>
           ) : (
@@ -1014,7 +1031,7 @@ function DesignComposer({
         </aside>
 
         <div className="design-canvas-wrap" ref={wrapRef}>
-          <div className="design-canvas-scroll">
+          <div className="design-canvas-scroll" ref={canvasScrollRef}>
             <canvas
               ref={canvasRef}
               width={canvasW}
@@ -1089,7 +1106,7 @@ function DesignComposer({
           {rightMotifs.length > 0 && (
             <div
               className="design-motif-col design-motif-col-right"
-              style={{ maxHeight: Math.max(0, canvasH - 300) }}
+              style={{ maxHeight: Math.max(0, displayedCanvasH - 300) }}
             >
               {rightMotifs.map((l) => (
                 <MotifCard key={l.key} entry={l} />
