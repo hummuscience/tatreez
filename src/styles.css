@@ -384,7 +384,11 @@ body {
   gap: 14px;
   align-items: start;
 }
-.design-motif-col { grid-area: motifs; display: flex; flex-direction: column; gap: 8px; }
+/* Left arm of the L: a single column, capped to the canvas height (inline
+   style) so the bottom strip hugs the canvas bottom rather than floating
+   far below it. Overflow is hidden because the remainder lives in the strip. */
+.design-motif-col { grid-area: motifs; display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+.design-motif-col .design-lib-card { width: 104px; }
 .design-canvas-wrap { grid-area: canvas; display: flex; flex-direction: column; gap: 8px; align-items: stretch; min-width: 0; }
 .design-motif-strip { grid-area: strip; display: flex; flex-wrap: wrap; gap: 8px; }
 .design-motif-strip .design-lib-card { width: 104px; }

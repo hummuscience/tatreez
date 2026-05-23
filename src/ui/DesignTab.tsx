@@ -34,7 +34,14 @@ import {
   savedPatternKey,
 } from '../storage/storage';
 import PatternThumb from './PatternThumb';
-import { cellSize, clearCanvas, drawGridLines, drawPatternBackground } from './canvasUtil';
+import {
+  GUTTER,
+  cellSize,
+  clearCanvas,
+  drawAxisLabels,
+  drawGridLines,
+  drawPatternBackground,
+} from './canvasUtil';
 import {
   COLOR_BUCKETS,
   COMPLEXITY_FILTERS,
@@ -305,10 +312,12 @@ function DesignComposer({
     return () => ro.disconnect();
   }, []);
 
+  // Reserve GUTTER px on the top + left for row/column number labels; the
+  // grid is drawn translated by GUTTER so all `x*cs` drawing stays unchanged.
   const aspect = design.gridH / design.gridW;
   const canvasW = wrapW;
-  const canvasH = Math.min(CANVAS_MAX_H, Math.round(canvasW * aspect));
-  const cs = cellSize(canvasW, canvasH, design.gridW, design.gridH);
+  const canvasH = Math.min(CANVAS_MAX_H, Math.round(canvasW * aspect)) + GUTTER;
+  const cs = cellSize(canvasW - GUTTER, canvasH - GUTTER, design.gridW, design.gridH);
 
   // Pixel length of the rotate handle's stem above an area.
   const HANDLE_STEM = 22;
@@ -323,7 +332,11 @@ function DesignComposer({
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0); // reset (draw() is re-invoked imperatively)
     clearCanvas(ctx, canvas.width, canvas.height);
+    drawAxisLabels(ctx, cs, design.gridW, design.gridH);
+    // Everything below draws in grid space, offset past the number gutter.
+    ctx.translate(GUTTER, GUTTER);
     drawGridLines(ctx, cs, design.gridW, design.gridH, 'rgba(0,0,0,0.06)');
 
     const interaction = interactionRef.current;
@@ -389,12 +402,14 @@ function DesignComposer({
   useEffect(draw);
 
   // ----- helpers -----
-  // Pointer position in canvas pixels (accounting for CSS scaling).
+  // Pointer position in grid-space pixels: canvas pixels (un-scaling CSS),
+  // minus the number gutter, so it matches the translated grid drawing where
+  // (0,0) is the grid origin.
   const pointerPx = (clientX: number, clientY: number): [number, number] => {
     const canvas = canvasRef.current!;
     const r = canvas.getBoundingClientRect();
     const scale = r.width / canvas.width;
-    return [(clientX - r.left) / scale, (clientY - r.top) / scale];
+    return [(clientX - r.left) / scale - GUTTER, (clientY - r.top) / scale - GUTTER];
   };
 
   const cellAt = (clientX: number, clientY: number): [number, number] => {
@@ -606,8 +621,12 @@ function DesignComposer({
   // Split the capped results between the L's two arms: a left column and a
   // bottom strip. Caps keep the L full without per-strip scroll fights —
   // narrow the dropdowns to reach motifs beyond the cap.
-  const LEFT_CAP = 14;
-  const BOTTOM_CAP = 10;
+  // Left column shows as many cards as fit beside the canvas (≈106px each);
+  // the rest spill into the bottom strip. Caps keep the L full without a
+  // cramped scroll box — narrow the dropdowns to reach motifs beyond them.
+  const CARD_PX = 106;
+  const LEFT_CAP = Math.max(3, Math.floor((canvasH - GUTTER) / CARD_PX));
+  const BOTTOM_CAP = 12;
   const leftMotifs = filteredLib.slice(0, LEFT_CAP);
   const bottomMotifs = filteredLib.slice(LEFT_CAP, LEFT_CAP + BOTTOM_CAP);
   const totalShown = Math.min(filteredLib.length, LEFT_CAP + BOTTOM_CAP);
@@ -712,7 +731,9 @@ function DesignComposer({
 
       {/* L-shape: left motif column + canvas + right inspector, then bottom strip */}
       <div className="design-body-l">
-        <aside className="design-motif-col">
+        {/* Cap the left column to the canvas's displayed height so the bottom
+            strip hugs the canvas bottom instead of floating far below it. */}
+        <aside className="design-motif-col" style={{ maxHeight: canvasH }}>
           {leftMotifs.length === 0 ? (
             <p className="empty-hint">No patterns match.</p>
           ) : (
