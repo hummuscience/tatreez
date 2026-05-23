@@ -269,8 +269,33 @@ function DesignComposer({
   const [activeAreaId, setActiveAreaId] = useState<string | null>(
     design.areas[0]?.id ?? null,
   );
-  // Copy/paste clipboard for duplicating an area (cells, size, repeat).
-  const clipboardRef = useRef<Area | null>(null);
+  // Multi-selection of area ids. The "active" id (above) is the primary one
+  // that drives the inspector + fit-filter; it is always part of this set.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(
+    () => new Set(design.areas[0]?.id ? [design.areas[0].id] : []),
+  );
+  // Copy/paste clipboard for duplicating areas (cells, size, repeat).
+  const clipboardRef = useRef<Area[] | null>(null);
+
+  // Select a single area (clears any multi-selection).
+  const selectOne = (id: string | null) => {
+    setActiveAreaId(id);
+    setSelectedIds(id ? new Set([id]) : new Set());
+  };
+  // Toggle one area in/out of the multi-selection (shift/ctrl-click).
+  const toggleSelected = (id: string) => {
+    setSelectedIds((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) {
+        next.delete(id);
+        if (activeAreaId === id) setActiveAreaId(next.values().next().value ?? null);
+      } else {
+        next.add(id);
+        setActiveAreaId(id);
+      }
+      return next;
+    });
+  };
   const [query, setQuery] = useState('');
   const [fitOnly, setFitOnly] = useState(false);
   const [fRegion, setFRegion] = useState<string | null>(null);
@@ -295,14 +320,18 @@ function DesignComposer({
     return [...counts.entries()].sort((a, b) => b[1] - a[1]);
   }, [library]);
 
-  // Pointer interaction: moving/rotating an existing area, or drawing a new
-  // empty "marked" area on blank canvas (a filter target). Move tracks the
-  // grab offset; rotate tracks a live preview angle that snaps to 90°;
-  // marquee tracks the rectangle being dragged out (start + current cell).
+  // Pointer interaction on the canvas:
+  //  - move: drag the grabbed area; if it's part of the multi-selection, the
+  //    whole selection moves by the same offset (offX/offY from the grabbed).
+  //  - rotate: live preview angle that snaps to 90° on release; rotates the
+  //    whole selection around its combined centre.
+  //  - marquee: a dragged-out rectangle. mode 'mark' makes an empty filter
+  //    area (plain drag on empty canvas); mode 'select' rubber-band-selects
+  //    every area it touches (Shift+drag on empty canvas).
   type Interaction =
     | { kind: 'move'; areaId: string; offX: number; offY: number }
-    | { kind: 'rotate'; areaId: string; cx: number; cy: number; angle: number }
-    | { kind: 'marquee'; x0: number; y0: number; x1: number; y1: number };
+    | { kind: 'rotate'; cx: number; cy: number; angle: number }
+    | { kind: 'marquee'; mode: 'mark' | 'select'; x0: number; y0: number; x1: number; y1: number };
   const interactionRef = useRef<Interaction | null>(null);
 
   // Canvas fills the residual column width; height follows the cloth aspect
@@ -363,20 +392,22 @@ function DesignComposer({
 
     const interaction = interactionRef.current;
 
+    // While rotating, the whole selection spins around its combined centre.
+    const rotating = interaction?.kind === 'rotate' ? interaction : null;
+    const groupCenter = rotating ? { x: rotating.cx * cs, y: rotating.cy * cs } : null;
+
     for (const area of design.areas) {
-      const isActive = area.id === activeAreaId;
+      const isSelected = selectedIds.has(area.id);
       const sub = compositeArea(area, design.palette);
 
-      // Live rotation preview: rotate the composite freely about the area
-      // centre. Otherwise draw it axis-aligned at the area position.
-      const rotating = interaction?.kind === 'rotate' && interaction.areaId === area.id;
       ctx.save();
-      if (rotating) {
-        const ccx = (area.x + area.w / 2) * cs;
-        const ccy = (area.y + area.h / 2) * cs;
-        ctx.translate(ccx, ccy);
-        ctx.rotate(interaction.angle);
-        ctx.translate(-area.w * cs * 0.5, -area.h * cs * 0.5);
+      if (rotating && isSelected && groupCenter) {
+        // Rotate the selection as a unit: spin the whole canvas about the
+        // group centre, then draw each selected area in place.
+        ctx.translate(groupCenter.x, groupCenter.y);
+        ctx.rotate(rotating.angle);
+        ctx.translate(-groupCenter.x, -groupCenter.y);
+        ctx.translate(area.x * cs, area.y * cs);
         drawPatternBackground(ctx, sub, cs);
       } else {
         ctx.translate(area.x * cs, area.y * cs);
@@ -384,50 +415,48 @@ function DesignComposer({
       }
       ctx.restore();
 
-      // area frame
+      // area frame — selected areas in accent, others muted
       ctx.save();
-      ctx.strokeStyle = isActive ? '#b5654a' : 'rgba(154,123,181,0.7)';
-      ctx.lineWidth = isActive ? 2 : 1.5;
+      ctx.strokeStyle = isSelected ? '#b5654a' : 'rgba(154,123,181,0.7)';
+      ctx.lineWidth = isSelected ? 2 : 1.5;
       ctx.setLineDash([5, 4]);
       ctx.strokeRect(area.x * cs + 0.5, area.y * cs + 0.5, area.w * cs, area.h * cs);
       ctx.restore();
-
-      // label
-      ctx.save();
-      ctx.font = '600 11px Inter, sans-serif';
-      ctx.fillStyle = isActive ? '#b5654a' : '#9a7bb5';
-      ctx.fillText(area.name, area.x * cs + 3, area.y * cs + 13);
-      ctx.restore();
-
-      // rotate handle on the active area: a stem + knob above the top edge
-      if (isActive) {
-        const hx = (area.x + area.w / 2) * cs;
-        const topY = area.y * cs;
-        ctx.save();
-        ctx.strokeStyle = '#b5654a';
-        ctx.fillStyle = '#b5654a';
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([]);
-        ctx.beginPath();
-        ctx.moveTo(hx, topY);
-        ctx.lineTo(hx, topY - HANDLE_STEM);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(hx, topY - HANDLE_STEM, 5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      }
     }
 
-    // Marquee preview while drawing a new area.
+    // One rotate handle for the selection, above the combined bounding box.
+    const selAreas = design.areas.filter((a) => selectedIds.has(a.id));
+    if (selAreas.length > 0 && !rotating) {
+      const minX = Math.min(...selAreas.map((a) => a.x));
+      const minY = Math.min(...selAreas.map((a) => a.y));
+      const maxX = Math.max(...selAreas.map((a) => a.x + a.w));
+      const hx = ((minX + maxX) / 2) * cs;
+      const topY = minY * cs;
+      ctx.save();
+      ctx.strokeStyle = '#b5654a';
+      ctx.fillStyle = '#b5654a';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(hx, topY);
+      ctx.lineTo(hx, topY - HANDLE_STEM);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(hx, topY - HANDLE_STEM, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Marquee preview (mark = filter area; select = rubber-band).
     if (interaction?.kind === 'marquee') {
       const mx = Math.min(interaction.x0, interaction.x1);
       const my = Math.min(interaction.y0, interaction.y1);
       const mw = Math.abs(interaction.x1 - interaction.x0) + 1;
       const mh = Math.abs(interaction.y1 - interaction.y0) + 1;
+      const sel = interaction.mode === 'select';
       ctx.save();
-      ctx.strokeStyle = '#b5654a';
-      ctx.fillStyle = 'rgba(181,101,74,0.10)';
+      ctx.strokeStyle = sel ? '#9a7bb5' : '#b5654a';
+      ctx.fillStyle = sel ? 'rgba(154,123,181,0.10)' : 'rgba(181,101,74,0.10)';
       ctx.lineWidth = 1.5;
       ctx.setLineDash([4, 3]);
       ctx.fillRect(mx * cs, my * cs, mw * cs, mh * cs);
@@ -467,12 +496,24 @@ function DesignComposer({
     return null;
   };
 
-  // Does the pointer hit the active area's rotate knob?
+  // Combined bounding box of the current selection (in cells), or null.
+  const selectionBox = (): { x: number; y: number; w: number; h: number } | null => {
+    const sel = design.areas.filter((a) => selectedIds.has(a.id));
+    if (sel.length === 0) return null;
+    const minX = Math.min(...sel.map((a) => a.x));
+    const minY = Math.min(...sel.map((a) => a.y));
+    const maxX = Math.max(...sel.map((a) => a.x + a.w));
+    const maxY = Math.max(...sel.map((a) => a.y + a.h));
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  };
+
+  // Does the pointer hit the selection's rotate knob (above its bbox)?
   const overRotateHandle = (clientX: number, clientY: number): boolean => {
-    if (!activeArea) return false;
+    const box = selectionBox();
+    if (!box) return false;
     const [px, py] = pointerPx(clientX, clientY);
-    const hx = (activeArea.x + activeArea.w / 2) * cs;
-    const hy = activeArea.y * cs - HANDLE_STEM;
+    const hx = (box.x + box.w / 2) * cs;
+    const hy = box.y * cs - HANDLE_STEM;
     return Math.hypot(px - hx, py - hy) <= HANDLE_HIT;
   };
 
@@ -507,80 +548,132 @@ function DesignComposer({
     };
   };
 
-  const flipArea = (area: Area, axis: 'x' | 'y'): Area => {
-    const f = axis === 'x' ? flipX : flipY;
-    return {
-      ...area,
-      motifs: area.motifs.map((m) => ({ ...m, cells: f(m.cells) })),
-      repeat: area.repeat ? { ...area.repeat, cells: f(area.repeat.cells) } : undefined,
-    };
+  // Rotate every selected area as a group around the selection's combined
+  // centre by N quarter-turns: each area's own content rotates, and its
+  // position is re-placed relative to the group centre (clamped on-grid).
+  const rotateGroup = (turns: number) => {
+    const n = ((turns % 4) + 4) % 4;
+    if (n === 0) return;
+    const box = selectionBox();
+    if (!box) return;
+    const ccx = box.x + box.w / 2;
+    const ccy = box.y + box.h / 2;
+    const areas = design.areas.map((a) => {
+      if (!selectedIds.has(a.id)) return a;
+      const rotated = rotateArea(a, n); // content rotated, w/h swapped, centred on itself
+      // Re-place the rotated area's centre by rotating its centre about the
+      // group centre (CW for positive turns).
+      const acx = a.x + a.w / 2;
+      const acy = a.y + a.h / 2;
+      let dx = acx - ccx;
+      let dy = acy - ccy;
+      for (let i = 0; i < n; i++) {
+        const ndx = -dy;
+        const ndy = dx;
+        dx = ndx;
+        dy = ndy;
+      }
+      const nxc = ccx + dx;
+      const nyc = ccy + dy;
+      const nx = Math.round(nxc - rotated.w / 2);
+      const ny = Math.round(nyc - rotated.h / 2);
+      return {
+        ...rotated,
+        x: Math.max(0, Math.min(nx, design.gridW - rotated.w)),
+        y: Math.max(0, Math.min(ny, design.gridH - rotated.h)),
+      };
+    });
+    onChange({ ...design, areas });
   };
 
-  // Duplicate an area (new id, offset by a few cells, clamped on-grid) and
-  // select the copy. Used by both the keyboard paste and the inspector button.
-  const duplicateArea = (src: Area): Area => {
+  // Duplicate a set of areas (new ids, offset by a few cells, clamped on-grid)
+  // and select the copies. Used by the keyboard paste and inspector button.
+  const duplicateAreas = (srcs: Area[]): Area[] => {
+    if (srcs.length === 0) return [];
     const off = 2;
-    const nx = Math.max(0, Math.min(src.x + off, design.gridW - src.w));
-    const ny = Math.max(0, Math.min(src.y + off, design.gridH - src.h));
-    const copy: Area = {
+    const copies = srcs.map((src) => ({
       ...src,
       id: newId('area'),
-      x: nx,
-      y: ny,
+      x: Math.max(0, Math.min(src.x + off, design.gridW - src.w)),
+      y: Math.max(0, Math.min(src.y + off, design.gridH - src.h)),
       motifs: src.motifs.map((m) => ({ ...m, cells: m.cells.map((r) => r.slice()) })),
       repeat: src.repeat ? { ...src.repeat, cells: src.repeat.cells.map((r) => r.slice()) } : undefined,
-    };
-    onChange({ ...design, areas: [...design.areas, copy] });
-    setActiveAreaId(copy.id);
-    return copy;
+    }));
+    onChange({ ...design, areas: [...design.areas, ...copies] });
+    setSelectedIds(new Set(copies.map((c) => c.id)));
+    setActiveAreaId(copies[copies.length - 1].id);
+    return copies;
   };
 
-  // Copy/paste: Cmd/Ctrl+C copies the active area, Cmd/Ctrl+V pastes a copy.
+  const selectedAreas = () => design.areas.filter((a) => selectedIds.has(a.id));
+
+  // Copy/paste: Cmd/Ctrl+C copies the selection, +V pastes copies, +D duplicates.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // Ignore when typing in an input/select/textarea.
       const t = e.target as HTMLElement | null;
       if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
       const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.key === 'c' && activeArea) {
-        clipboardRef.current = activeArea;
+      const sel = selectedAreas();
+      if (mod && e.key === 'c' && sel.length > 0) {
+        clipboardRef.current = sel;
         e.preventDefault();
       } else if (mod && e.key === 'v' && clipboardRef.current) {
-        duplicateArea(clipboardRef.current);
+        duplicateAreas(clipboardRef.current);
         e.preventDefault();
-      } else if (mod && e.key === 'd' && activeArea) {
-        // Cmd/Ctrl+D: duplicate directly without a separate copy.
-        duplicateArea(activeArea);
+      } else if (mod && e.key === 'd' && sel.length > 0) {
+        duplicateAreas(sel);
         e.preventDefault();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeArea, design]);
+  }, [selectedIds, design]);
 
-  // ----- pointer: select / move / rotate -----
+  // ----- pointer: select / move / rotate / marquee -----
   const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    // Rotate handle takes priority over body hits.
-    if (overRotateHandle(e.clientX, e.clientY) && activeArea) {
-      interactionRef.current = {
-        kind: 'rotate',
-        areaId: activeArea.id,
-        cx: activeArea.x + activeArea.w / 2,
-        cy: activeArea.y + activeArea.h / 2,
-        angle: 0,
-      };
-      return;
+    const additive = e.shiftKey || e.metaKey || e.ctrlKey;
+
+    // Rotate handle (on the selection) takes priority over body hits.
+    if (overRotateHandle(e.clientX, e.clientY)) {
+      const box = selectionBox();
+      if (box) {
+        interactionRef.current = {
+          kind: 'rotate',
+          cx: box.x + box.w / 2,
+          cy: box.y + box.h / 2,
+          angle: 0,
+        };
+        return;
+      }
     }
+
     const [cx, cy] = cellAt(e.clientX, e.clientY);
     const hit = areaAt(cx, cy);
     if (hit) {
-      setActiveAreaId(hit.id);
+      if (additive) {
+        // Toggle this area in/out of the selection; no drag.
+        toggleSelected(hit.id);
+        return;
+      }
+      // Plain click: if it's already selected, keep the whole selection (so a
+      // group drag moves all); otherwise select just this one.
+      if (!selectedIds.has(hit.id)) selectOne(hit.id);
+      else setActiveAreaId(hit.id);
       interactionRef.current = { kind: 'move', areaId: hit.id, offX: cx - hit.x, offY: cy - hit.y };
     } else {
-      // Empty canvas: start drawing a marked area to filter against.
-      setActiveAreaId(null);
-      interactionRef.current = { kind: 'marquee', x0: cx, y0: cy, x1: cx, y1: cy };
+      // Empty canvas: Shift+drag rubber-band selects; plain drag marks a
+      // filter area.
+      if (!additive) selectOne(null);
+      interactionRef.current = {
+        kind: 'marquee',
+        mode: additive ? 'select' : 'mark',
+        x0: cx,
+        y0: cy,
+        x1: cx,
+        y1: cy,
+      };
     }
   };
 
@@ -589,17 +682,34 @@ function DesignComposer({
     if (!it) return;
     if (it.kind === 'move') {
       const [cx, cy] = cellAt(e.clientX, e.clientY);
-      const area = design.areas.find((a) => a.id === it.areaId);
-      if (!area) return;
-      const nx = Math.max(0, Math.min(cx - it.offX, design.gridW - area.w));
-      const ny = Math.max(0, Math.min(cy - it.offY, design.gridH - area.h));
-      if (nx !== area.x || ny !== area.y) updateArea(area.id, (a) => ({ ...a, x: nx, y: ny }));
+      const grabbed = design.areas.find((a) => a.id === it.areaId);
+      if (!grabbed) return;
+      // Desired top-left of the grabbed area, then derive the group delta.
+      const wantX = cx - it.offX;
+      const wantY = cy - it.offY;
+      let dx = wantX - grabbed.x;
+      let dy = wantY - grabbed.y;
+      if (dx === 0 && dy === 0) return;
+      const moving = selectedIds.has(it.areaId) ? selectedIds : new Set([it.areaId]);
+      // Clamp the delta so no moving area leaves the grid.
+      for (const a of design.areas) {
+        if (!moving.has(a.id)) continue;
+        dx = Math.max(-a.x, Math.min(dx, design.gridW - a.w - a.x));
+        dy = Math.max(-a.y, Math.min(dy, design.gridH - a.h - a.y));
+      }
+      if (dx === 0 && dy === 0) return;
+      onChange({
+        ...design,
+        areas: design.areas.map((a) =>
+          moving.has(a.id) ? { ...a, x: a.x + dx, y: a.y + dy } : a,
+        ),
+      });
     } else if (it.kind === 'marquee') {
       const [cx, cy] = cellAt(e.clientX, e.clientY);
       interactionRef.current = { ...it, x1: cx, y1: cy };
       draw();
     } else {
-      // rotate: angle from area centre to pointer; Alt snaps to 90° live.
+      // rotate: angle from group centre to pointer; Alt snaps to 90° live.
       const [px, py] = pointerPx(e.clientX, e.clientY);
       const ccx = it.cx * cs;
       const ccy = it.cy * cs;
@@ -617,12 +727,27 @@ function DesignComposer({
     if (it.kind === 'rotate') {
       // Snap the free angle to the nearest quarter turn (clockwise positive).
       const turns = Math.round(it.angle / (Math.PI / 2));
-      const area = design.areas.find((a) => a.id === it.areaId);
-      if (area && ((turns % 4) + 4) % 4 !== 0) {
-        updateArea(area.id, (a) => rotateArea(a, turns));
+      if (((turns % 4) + 4) % 4 !== 0) {
+        rotateGroup(turns);
       } else {
         draw(); // clear the preview transform
       }
+    } else if (it.kind === 'marquee' && it.mode === 'select') {
+      // Rubber-band: select every area the box touches.
+      const x = Math.min(it.x0, it.x1);
+      const y = Math.min(it.y0, it.y1);
+      const x2 = Math.max(it.x0, it.x1);
+      const y2 = Math.max(it.y0, it.y1);
+      const hits = design.areas.filter(
+        (a) => a.x <= x2 && a.x + a.w - 1 >= x && a.y <= y2 && a.y + a.h - 1 >= y,
+      );
+      if (hits.length > 0) {
+        setSelectedIds(new Set(hits.map((a) => a.id)));
+        setActiveAreaId(hits[hits.length - 1].id);
+      } else {
+        selectOne(null);
+      }
+      draw();
     } else if (it.kind === 'marquee') {
       const x = Math.min(it.x0, it.x1);
       const y = Math.min(it.y0, it.y1);
@@ -642,7 +767,7 @@ function DesignComposer({
         motifs: [],
       };
       onChange({ ...design, areas: [...design.areas, area] });
-      setActiveAreaId(area.id);
+      selectOne(area.id);
     }
   };
 
@@ -667,7 +792,7 @@ function DesignComposer({
         palette: merged.palette,
         areas: design.areas.map((a) => (a.id === target.id ? target : a)),
       });
-      setActiveAreaId(target.id);
+      selectOne(target.id);
       return;
     }
 
@@ -695,7 +820,7 @@ function DesignComposer({
         palette: merged.palette,
         areas: design.areas.map((a) => (a.id === target.id ? target : a)),
       });
-      setActiveAreaId(target.id);
+      selectOne(target.id);
       return;
     }
 
@@ -713,7 +838,7 @@ function DesignComposer({
       motifs: [{ patternKey: key, cells, x: 0, y: 0 }],
     };
     onChange({ ...design, palette: merged.palette, areas: [...design.areas, area] });
-    setActiveAreaId(area.id);
+    selectOne(area.id);
   };
 
   const filteredLib = library.filter((l) => {
@@ -915,13 +1040,28 @@ function DesignComposer({
         <aside className="design-inspector">
           <AreaInspector
             area={activeArea}
+            selectedCount={selectedIds.size}
             updateArea={updateArea}
-            onRotate={(a) => updateArea(a.id, (cur) => rotateArea(cur, 1))}
-            onFlip={(a, axis) => updateArea(a.id, (cur) => flipArea(cur, axis))}
-            onDuplicate={duplicateArea}
-            onDeleteArea={(id) => {
-              onChange({ ...design, areas: design.areas.filter((a) => a.id !== id) });
-              setActiveAreaId(null);
+            onRotate={() => rotateGroup(1)}
+            onFlip={(axis) => {
+              const f = axis === 'x' ? flipX : flipY;
+              onChange({
+                ...design,
+                areas: design.areas.map((a) =>
+                  selectedIds.has(a.id)
+                    ? {
+                        ...a,
+                        motifs: a.motifs.map((m) => ({ ...m, cells: f(m.cells) })),
+                        repeat: a.repeat ? { ...a.repeat, cells: f(a.repeat.cells) } : undefined,
+                      }
+                    : a,
+                ),
+              });
+            }}
+            onDuplicate={() => duplicateAreas(selectedAreas())}
+            onDeleteArea={() => {
+              onChange({ ...design, areas: design.areas.filter((a) => !selectedIds.has(a.id)) });
+              selectOne(null);
             }}
             onPlanArea={(area) => {
               const sub = compositeArea(area, design.palette);
@@ -1044,41 +1184,36 @@ function ClothBar({
 
 // ---------- Area inspector ----------
 
+interface AreaActions {
+  onRotate: () => void;
+  onFlip: (axis: 'x' | 'y') => void;
+  onDuplicate: () => void;
+  onDeleteArea: () => void;
+  onPlanArea: (a: Area) => void;
+}
+
 function AreaInspector({
   area,
+  selectedCount,
   updateArea,
-  onRotate,
-  onFlip,
-  onDuplicate,
-  onDeleteArea,
-  onPlanArea,
+  ...actions
 }: {
   area: Area | null;
+  selectedCount: number;
   updateArea: (id: string, fn: (a: Area) => Area) => void;
-  onRotate: (a: Area) => void;
-  onFlip: (a: Area, axis: 'x' | 'y') => void;
-  onDuplicate: (a: Area) => void;
-  onDeleteArea: (id: string) => void;
-  onPlanArea: (a: Area) => void;
-}) {
+} & AreaActions) {
   return (
     <section className="panel">
       <div className="panel-h">
-        <span>Area</span>
+        <span>{selectedCount > 1 ? `${selectedCount} areas` : 'Area'}</span>
         <span dir="rtl">المنطقة</span>
       </div>
       {!area ? (
-        <p className="empty-hint">Drop a pattern on the canvas, then click it to select.</p>
+        <p className="empty-hint">
+          Drop a pattern on the canvas, then click it. Shift-click or drag a box to select several.
+        </p>
       ) : (
-        <AreaPanel
-          area={area}
-          updateArea={updateArea}
-          onRotate={onRotate}
-          onFlip={onFlip}
-          onDuplicate={onDuplicate}
-          onDeleteArea={onDeleteArea}
-          onPlanArea={onPlanArea}
-        />
+        <AreaPanel area={area} multi={selectedCount > 1} updateArea={updateArea} {...actions} />
       )}
     </section>
   );
@@ -1086,6 +1221,7 @@ function AreaInspector({
 
 function AreaPanel({
   area,
+  multi,
   updateArea,
   onRotate,
   onFlip,
@@ -1094,18 +1230,49 @@ function AreaPanel({
   onPlanArea,
 }: {
   area: Area;
+  multi: boolean;
   updateArea: (id: string, fn: (a: Area) => Area) => void;
-  onRotate: (a: Area) => void;
-  onFlip: (a: Area, axis: 'x' | 'y') => void;
-  onDuplicate: (a: Area) => void;
-  onDeleteArea: (id: string) => void;
-  onPlanArea: (a: Area) => void;
-}) {
+} & AreaActions) {
   const repeating = !!area.repeat;
   const repeatCells = area.repeat?.cells ?? [];
   const mh = repeatCells.length;
   const mw = mh > 0 ? repeatCells[0].length : 0;
   const fit = repeating && mw > 0 ? repeatFit(area, mw, mh, area.repeat!.mode) : null;
+
+  // With multiple areas selected, per-area fields (name, size, repeat) don't
+  // apply — show only the group transform + duplicate/delete actions.
+  if (multi) {
+    return (
+      <div className="design-area">
+        <p className="design-area-count">Transform, duplicate, or delete all selected areas.</p>
+        <div className="design-transform">
+          <button type="button" className="chip" onClick={onRotate} title="Rotate group 90°">
+            ⟳ 90°
+          </button>
+          <button type="button" className="chip" onClick={() => onFlip('x')} title="Flip horizontally">
+            ⇋ Flip X
+          </button>
+          <button type="button" className="chip" onClick={() => onFlip('y')} title="Flip vertically">
+            ⇅ Flip Y
+          </button>
+        </div>
+        <div className="design-area-actions">
+          <button className="btn-ghost btn-sm" type="button" onClick={onDuplicate} title="Duplicate (Ctrl/Cmd+D)">
+            Duplicate all
+          </button>
+          <button
+            className="btn-ghost btn-sm"
+            type="button"
+            onClick={() => {
+              if (confirm('Delete the selected areas?')) onDeleteArea();
+            }}
+          >
+            Delete all
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="design-area">
@@ -1152,13 +1319,13 @@ function AreaPanel({
 
       {/* Transform: rotate 90° + flip. Mirror the canvas rotate handle. */}
       <div className="design-transform">
-        <button type="button" className="chip" onClick={() => onRotate(area)} title="Rotate 90° clockwise">
+        <button type="button" className="chip" onClick={onRotate} title="Rotate 90° clockwise">
           ⟳ 90°
         </button>
-        <button type="button" className="chip" onClick={() => onFlip(area, 'x')} title="Flip horizontally">
+        <button type="button" className="chip" onClick={() => onFlip('x')} title="Flip horizontally">
           ⇋ Flip X
         </button>
-        <button type="button" className="chip" onClick={() => onFlip(area, 'y')} title="Flip vertically">
+        <button type="button" className="chip" onClick={() => onFlip('y')} title="Flip vertically">
           ⇅ Flip Y
         </button>
       </div>
@@ -1243,7 +1410,7 @@ function AreaPanel({
         <button
           className="btn-ghost btn-sm"
           type="button"
-          onClick={() => onDuplicate(area)}
+          onClick={onDuplicate}
           title="Duplicate (Ctrl/Cmd+D)"
         >
           Duplicate
@@ -1252,7 +1419,7 @@ function AreaPanel({
           className="btn-ghost btn-sm"
           type="button"
           onClick={() => {
-            if (confirm(`Delete area "${area.name}"?`)) onDeleteArea(area.id);
+            if (confirm(`Delete area "${area.name}"?`)) onDeleteArea();
           }}
         >
           Delete area
