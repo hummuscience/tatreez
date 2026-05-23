@@ -90,6 +90,14 @@ export default function App() {
     [setPattern, navigate],
   );
 
+  const loadAndEdit = useCallback(
+    (pattern: Pattern, patternKey: string | null) => {
+      setPattern(pattern, patternKey);
+      navigate('editor');
+    },
+    [setPattern, navigate],
+  );
+
   return (
     <div className="tt tt-linen">
       <header className="hdr">
@@ -132,7 +140,7 @@ export default function App() {
 
       <main className="tt-body">
         {tab === 'library' && (
-          <LibraryTab onLoad={loadAndShowPlans} showToast={showToast} />
+          <LibraryTab onLoad={loadAndEdit} showToast={showToast} />
         )}
         {tab === 'editor' && (
           <EditorTab
