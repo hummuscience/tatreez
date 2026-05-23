@@ -2,9 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   cmToCells,
   compositeArea,
+  flipX,
+  flipY,
   mergePalette,
   remapCells,
   repeatFit,
+  rotateCW,
+  rotateTurns,
+  trimCells,
   type Area,
 } from './design';
 import { getCloth } from './cloth';
@@ -72,6 +77,90 @@ describe('remapCells', () => {
 function area(over: Partial<Area>): Area {
   return { id: 'a', name: 'a', x: 0, y: 0, w: 4, h: 4, motifs: [], ...over };
 }
+
+describe('transforms', () => {
+  // 2x3 grid (h=2, w=3):
+  //   1 2 3
+  //   4 5 6
+  const g = [
+    [1, 2, 3],
+    [4, 5, 6],
+  ];
+
+  it('rotateCW turns h×w into w×h, mapping corners correctly', () => {
+    // CW: top row becomes right column → first column is [4,1]
+    expect(rotateCW(g)).toEqual([
+      [4, 1],
+      [5, 2],
+      [6, 3],
+    ]);
+  });
+
+  it('rotateTurns is identity at 0 and 4 turns', () => {
+    expect(rotateTurns(g, 0)).toEqual(g);
+    expect(rotateTurns(g, 4)).toEqual(g);
+  });
+
+  it('rotateTurns(2) is 180° (reverse rows and columns)', () => {
+    expect(rotateTurns(g, 2)).toEqual([
+      [6, 5, 4],
+      [3, 2, 1],
+    ]);
+  });
+
+  it('rotateTurns handles negative turns', () => {
+    expect(rotateTurns(g, -1)).toEqual(rotateTurns(g, 3));
+  });
+
+  it('flipX mirrors left↔right', () => {
+    expect(flipX(g)).toEqual([
+      [3, 2, 1],
+      [6, 5, 4],
+    ]);
+  });
+
+  it('flipY mirrors top↔bottom', () => {
+    expect(flipY(g)).toEqual([
+      [4, 5, 6],
+      [1, 2, 3],
+    ]);
+  });
+
+  it('does not mutate the input', () => {
+    const copy = g.map((r) => r.slice());
+    rotateCW(g);
+    flipX(g);
+    flipY(g);
+    expect(g).toEqual(copy);
+  });
+});
+
+describe('trimCells', () => {
+  it('crops blank margins to the painted bounding box', () => {
+    const padded = [
+      [0, 0, 0, 0],
+      [0, 1, 2, 0],
+      [0, 3, 0, 0],
+      [0, 0, 0, 0],
+    ];
+    expect(trimCells(padded)).toEqual([
+      [1, 2],
+      [3, 0],
+    ]);
+  });
+
+  it('returns a single empty cell for an all-empty grid', () => {
+    expect(trimCells([[0, 0], [0, 0]])).toEqual([[0]]);
+  });
+
+  it('leaves an already-tight grid unchanged', () => {
+    const tight = [
+      [1, 2],
+      [3, 4],
+    ];
+    expect(trimCells(tight)).toEqual(tight);
+  });
+});
 
 describe('compositeArea', () => {
   const palette = [null, '#aa0000', '#00aa00'];

@@ -108,6 +108,71 @@ export function remapCells(cells: ColorIndex[][], indexMap: number[]): ColorInde
   return cells.map((row) => row.map((v) => indexMap[v] ?? 0));
 }
 
+/**
+ * Rotate a cell grid 90° clockwise. A `h×w` grid becomes `w×h`. Cells map
+ * 1:1 (no resampling), so stitches stay crisp — this is why only 90° steps
+ * are allowed on the grid.
+ */
+export function rotateCW(cells: ColorIndex[][]): ColorIndex[][] {
+  const h = cells.length;
+  if (h === 0) return [];
+  const w = cells[0].length;
+  const out: ColorIndex[][] = Array.from({ length: w }, () => new Array<ColorIndex>(h).fill(0));
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      out[x][h - 1 - y] = cells[y][x];
+    }
+  }
+  return out;
+}
+
+/** Rotate a cell grid by a multiple of 90° (turns mod 4, clockwise). */
+export function rotateTurns(cells: ColorIndex[][], turns: number): ColorIndex[][] {
+  let out = cells;
+  const n = ((turns % 4) + 4) % 4;
+  for (let i = 0; i < n; i++) out = rotateCW(out);
+  return out;
+}
+
+/** Mirror a cell grid horizontally (flip left↔right). */
+export function flipX(cells: ColorIndex[][]): ColorIndex[][] {
+  return cells.map((row) => row.slice().reverse());
+}
+
+/** Mirror a cell grid vertically (flip top↔bottom). */
+export function flipY(cells: ColorIndex[][]): ColorIndex[][] {
+  return cells.slice().reverse();
+}
+
+/**
+ * Crop a cell grid to the bounding box of its non-empty (nonzero) cells, so
+ * an area drawn around it hugs the visible motif rather than the source
+ * chart's blank margins. Returns the trimmed cells; an all-empty grid trims
+ * to a single empty cell.
+ */
+export function trimCells(cells: ColorIndex[][]): ColorIndex[][] {
+  let top = Infinity;
+  let left = Infinity;
+  let bottom = -1;
+  let right = -1;
+  for (let y = 0; y < cells.length; y++) {
+    for (let x = 0; x < cells[y].length; x++) {
+      if (cells[y][x] > 0) {
+        if (y < top) top = y;
+        if (y > bottom) bottom = y;
+        if (x < left) left = x;
+        if (x > right) right = x;
+      }
+    }
+  }
+  if (bottom < 0) return [[0]]; // nothing painted
+  const out: ColorIndex[][] = [];
+  for (let y = top; y <= bottom; y++) {
+    out.push(cells[y].slice(left, right + 1));
+  }
+  return out;
+}
+
 export interface RepeatFit {
   /** Whole copies that fit across (x) and down (y). */
   cols: number;
@@ -176,7 +241,9 @@ export function compositeArea(area: Area, palette: (string | null)[]): Pattern {
     width: area.w,
     height: area.h,
     cells: grid,
-    palette,
+    // The design's internal palette is hex-only (motif composition predates
+    // DMC); wrap into the PaletteColor shape at this Pattern boundary.
+    palette: palette.map((hex) => (hex == null ? null : { hex })),
   };
 }
 

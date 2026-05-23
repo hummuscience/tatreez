@@ -176,6 +176,34 @@ body {
 .swatch-on { box-shadow: 0 0 0 2px var(--accent); }
 .swatch-add { background: none; color: var(--ink-soft); display: grid; place-items: center; font-size: 16px; }
 
+/* Active-colour readout + Replace trigger under the palette */
+.palette-active { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+.palette-active-label { font-size: 12px; color: var(--ink-soft); }
+
+/* Colour replace popover */
+.color-replace { position: relative; margin-top: 8px; border: 1px solid var(--rule); border-radius: var(--input-radius); background: var(--surface); padding: 10px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow); }
+.cr-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cr-current { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink); }
+.cr-close { background: none; border: none; font-size: 18px; line-height: 1; cursor: pointer; color: var(--ink-soft); }
+.cr-chip { width: 16px; height: 16px; border-radius: 3px; border: 1px solid var(--rule); flex: 0 0 auto; }
+.cr-search { width: 100%; }
+.cr-filter { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-soft); }
+.cr-list { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.cr-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border: none; background: none; cursor: pointer; text-align: left; border-radius: 4px; font-size: 12px; }
+.cr-row:hover { background: var(--rule); }
+.cr-num { font-weight: 600; }
+.cr-name { color: var(--ink-soft); }
+.cr-empty { font-size: 12px; color: var(--ink-soft); padding: 6px; }
+.cr-hex { display: flex; align-items: center; gap: 6px; }
+.cr-hex-input { flex: 1; }
+
+/* DMC line in the plans material list */
+.tn-dmc { font-size: 12px; font-weight: 600; color: var(--ink); }
+
+/* DMC colour chips on library cards */
+.pat-dmc { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.pat-dmc-chip { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--rule); }
+
 .tool-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-bottom: 6px; }
 .tool-btn { padding: 6px 10px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); border-radius: var(--input-radius); font: inherit; font-size: 12px; cursor: pointer; }
 .tool-btn:hover { border-color: var(--rule-strong); }
@@ -365,5 +393,6 @@ body {
 .design-area-count { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); display: flex; align-items: center; gap: 8px; }
 .design-area-size { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .design-repeat-modes { display: flex; gap: 6px; }
+.design-transform { display: flex; gap: 6px; flex-wrap: wrap; }
 .design-fit-report { font-family: var(--font-mono); font-size: 11px; color: var(--accent); }
 .design-area-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }

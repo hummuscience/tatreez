@@ -7,7 +7,7 @@ import { planAsPrimitives, describePrimitive, type Primitive } from '../engine/p
 import { getGroundTruth } from '../storage/storage';
 import { getCanonicalGroundTruth } from '../patterns/groundTruths';
 import { GUTTER, cellSize, clearCanvas, drawAxisLabels, drawGridLines, drawPatternBackground } from './canvasUtil';
-import { getPalette } from '../patterns/builtin';
+import { getPalette, getPaletteColors } from '../patterns/builtin';
 import {
   CLOTH_OPTIONS,
   STRAND_OPTIONS,
@@ -405,20 +405,22 @@ export default function PlanTab({ state }: Props) {
     const out: Array<{
       idx: number;
       color: string;
+      dmc?: { number: string; name: string };
       stitches: number;
       totalMm: number;
       skeins: number;
     }> = [];
-    const palLen = pattern.palette?.length ?? palette.length;
-    for (let i = 1; i < palLen; i++) {
-      const colorVal = pattern.palette ? pattern.palette[i] : palette[i];
+    const colors = getPaletteColors(pattern);
+    for (let i = 1; i < colors.length; i++) {
+      const colorVal = colors[i];
       if (!colorVal) continue;
       const stitches = stitchesByColor.get(i) ?? 0;
       if (stitches === 0) continue;
       const totalMm = stitches * flossMm * activeBackMult * strands.mult;
       out.push({
         idx: i,
-        color: colorVal,
+        color: colorVal.hex,
+        dmc: colorVal.dmc,
         stitches,
         totalMm,
         skeins: totalMm / SKEIN_MM,
@@ -904,6 +906,9 @@ export default function PlanTab({ state }: Props) {
                   <div key={t.idx} className="thread-need">
                     <div className="tn-swatch" style={{ background: t.color }} />
                     <div className="tn-meta">
+                      <div className="tn-dmc">
+                        {t.dmc ? `DMC ${t.dmc.number} · ${t.dmc.name}` : t.color}
+                      </div>
                       <div className="tn-row">
                         <span className="tn-stitches">
                           {t.stitches} stitches

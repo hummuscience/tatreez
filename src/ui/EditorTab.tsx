@@ -1,9 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
-import type { ColorIndex, Pattern } from '../engine/types';
-import { PALETTE, emptyPattern } from '../patterns/builtin';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ColorIndex, PaletteColor, Pattern } from '../engine/types';
+import { emptyPattern, getPaletteColors } from '../patterns/builtin';
+import { BUILTIN_PATTERNS } from '../patterns/builtin';
+import { TIRAZAIN_ARCHIVE } from '../patterns/tirazainArchive';
+import { libraryDmcNumbers } from '../patterns/dmcCatalog';
 import { countRegions, countStitches } from '../engine/regions';
 import { savePattern, savedPatternKey } from '../storage/storage';
 import { GUTTER, cellSize, clearCanvas, drawAxisLabels, drawGridLines, drawPatternBackground } from './canvasUtil';
+import ColorReplacePopover from './ColorReplacePopover';
 import type { PatternState } from '../App';
 
 interface Props {
@@ -18,6 +22,7 @@ const CANVAS_SIZE = 480;
 export default function EditorTab({ state, onChangePattern, onSaved, onGoToPlans }: Props) {
   const { pattern } = state;
   const [activeColor, setActiveColor] = useState<ColorIndex>(1);
+  const [replacing, setReplacing] = useState(false);
   const [name, setName] = useState(pattern.name);
   const [nameAr, setNameAr] = useState(pattern.nameAr ?? '');
   const [w, setW] = useState(pattern.width);
@@ -67,6 +72,26 @@ export default function EditorTab({ state, onChangePattern, onSaved, onGoToPlans
     const next = pattern.cells.map((row) => row.slice());
     next[y][x] = val;
     onChangePattern({ ...pattern, cells: next });
+  };
+
+  // DMC numbers used across the whole library — the "traditional" set the
+  // Replace picker can filter to. Computed once; the library is static.
+  const libraryNumbers = useMemo(
+    () =>
+      libraryDmcNumbers([
+        ...Object.values(BUILTIN_PATTERNS),
+        ...Object.values(TIRAZAIN_ARCHIVE),
+      ]),
+    [],
+  );
+
+  // Replace the colour in palette slot `idx` with `color`. Cells already
+  // reference the slot by index, so swapping the palette entry recolours
+  // every cell of that colour — no cell rewrite needed.
+  const replaceColor = (idx: ColorIndex, color: PaletteColor) => {
+    const palette = getPaletteColors(pattern).slice();
+    palette[idx] = color;
+    onChangePattern({ ...pattern, palette });
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -119,8 +144,8 @@ export default function EditorTab({ state, onChangePattern, onSaved, onGoToPlans
     onSaved(toSave, savedPatternKey(id));
   };
 
-  // Decide which palette to show: per-pattern if present, else global.
-  const palette = pattern.palette ?? PALETTE.map((p) => p.color);
+  // Decide which palette to show (objects carry hex + optional DMC).
+  const palette = getPaletteColors(pattern);
 
   return (
     <div className="editor">
@@ -198,20 +223,50 @@ export default function EditorTab({ state, onChangePattern, onSaved, onGoToPlans
             />
             {palette.slice(1).map((color, i) => {
               const idx = (i + 1) as ColorIndex;
-              const label = PALETTE[idx]?.name ?? color ?? '';
-              return color ? (
+              if (!color) return null;
+              const label = color.dmc
+                ? `DMC ${color.dmc.number} · ${color.dmc.name}`
+                : color.hex;
+              return (
                 <button
                   type="button"
                   key={i}
                   className={`swatch${activeColor === idx ? ' swatch-on' : ''}`}
-                  style={{ background: color }}
+                  style={{ background: color.hex }}
                   onClick={() => setActiveColor(idx)}
                   title={label}
                   aria-label={label}
                 />
-              ) : null;
+              );
             })}
           </div>
+          {activeColor > 0 && palette[activeColor] && (
+            <div className="palette-active">
+              <span className="palette-active-label">
+                {palette[activeColor]!.dmc
+                  ? `DMC ${palette[activeColor]!.dmc!.number} · ${palette[activeColor]!.dmc!.name}`
+                  : palette[activeColor]!.hex}
+              </span>
+              <button
+                type="button"
+                className="btn-ghost btn-sm"
+                onClick={() => setReplacing(true)}
+              >
+                Replace…
+              </button>
+            </div>
+          )}
+          {replacing && activeColor > 0 && palette[activeColor] && (
+            <ColorReplacePopover
+              current={palette[activeColor]!}
+              libraryNumbers={libraryNumbers}
+              onPick={(c) => {
+                replaceColor(activeColor, c);
+                setReplacing(false);
+              }}
+              onClose={() => setReplacing(false)}
+            />
+          )}
         </div>
 
         <div className="panel panel-stats">
@@ -276,7 +331,7 @@ export default function EditorTab({ state, onChangePattern, onSaved, onGoToPlans
             <span>
               {activeColor === 0
                 ? 'eraser'
-                : (PALETTE[activeColor]?.name ?? `color ${activeColor}`)}
+                : (palette[activeColor]?.dmc?.name ?? `color ${activeColor}`)}
             </span>
           </div>
           <div className="editor-actions">

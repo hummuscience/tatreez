@@ -9,6 +9,29 @@
  */
 export type ColorIndex = number;
 
+/**
+ * Reference to a DMC floss thread. `number` is the canonical DMC code
+ * (e.g. "310"); special threads use tokens like "ECRU" or "BLANC".
+ */
+export interface DmcRef {
+  number: string;
+  name: string;
+}
+
+/**
+ * One filled palette colour. `hex` is always present (the rendered
+ * colour); `dmc` is present when the colour maps to a known DMC thread
+ * (e.g. on import from an .oxs chart). Index 0 of a {@link Palette} is
+ * the empty cell and is represented by `null`, not a PaletteColor.
+ */
+export interface PaletteColor {
+  hex: string;
+  dmc?: DmcRef;
+}
+
+/** Per-pattern palette: index 0 is empty (null), 1..N are colours. */
+export type Palette = (PaletteColor | null)[];
+
 export type Cell = [number, number];
 
 export type Corner = [number, number];
@@ -56,12 +79,16 @@ export interface Pattern {
   cells: ColorIndex[][];
   /**
    * Optional per-pattern palette: index 0 is empty (null), indices 1..N
-   * are hex colour strings. When unset, the global engine PALETTE from
-   * `src/patterns/builtin.ts` is used as a fallback for backward
-   * compatibility with patterns saved before per-pattern palettes were
-   * introduced.
+   * are {@link PaletteColor} objects (hex + optional DMC). When unset,
+   * the global engine PALETTE from `src/patterns/builtin.ts` is used as
+   * a fallback for backward compatibility with patterns saved before
+   * per-pattern palettes were introduced.
+   *
+   * Legacy patterns (and persisted localStorage data) may carry the old
+   * `(string | null)[]` hex-only shape; `normalizePalette` in
+   * `src/patterns/builtin.ts` upgrades these on read.
    */
-  palette?: (string | null)[];
+  palette?: Palette;
   /**
    * Provenance metadata for patterns imported from external archives.
    * Optional — built-in and user-drawn patterns omit this.

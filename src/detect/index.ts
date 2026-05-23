@@ -1,4 +1,4 @@
-import type { ColorIndex, Pattern } from '../engine/types';
+import type { ColorIndex, Palette, Pattern } from '../engine/types';
 import type { DetectionResult } from './types';
 import { autoCrop } from './crop';
 import { detectGridlines } from './gridDetect';
@@ -205,7 +205,7 @@ export function patternFromDetectionAuto(
 
   // Build the per-pattern palette: index 0 = null (empty), then the
   // detected RGB centroids in palette-index order.
-  const palette: (string | null)[] = [null];
+  const palette: Palette = [null];
   for (let i = 0; i < clusters.length; i++) {
     if (i === chosenEmpty) continue;
     const c = clusters[i].centroid;
@@ -214,7 +214,8 @@ export function patternFromDetectionAuto(
       [c.r, c.g, c.b]
         .map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0'))
         .join('');
-    palette.push(hex);
+    // Detected from an image — no DMC origin.
+    palette.push({ hex });
   }
 
   // Translate cell assignments

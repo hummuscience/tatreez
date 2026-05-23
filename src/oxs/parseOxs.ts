@@ -1,4 +1,4 @@
-import type { ColorIndex, Pattern } from '../engine/types';
+import type { ColorIndex, DmcRef, Palette, PaletteColor, Pattern } from '../engine/types';
 
 /**
  * Parse an Open X-Stitch (OXS) XML file into a Pattern.
@@ -42,8 +42,22 @@ interface PaletteEntry {
   index: number;
   /** Hex colour string with leading '#' */
   color: string;
-  /** Human-readable name, e.g. "DMC 310 Black" */
-  label: string;
+  /** DMC thread reference, when this entry maps to a DMC floss. */
+  dmc?: DmcRef;
+}
+
+/**
+ * Parse the OXS `number` attribute into a DMC reference, given the
+ * separate `name` attribute. OXS encodes DMC threads as
+ * `number="DMC    310"` (variable whitespace) with `name="Black"`.
+ * Non-DMC entries (e.g. `number="Ecru"`, `number="cloth"`) return null.
+ */
+function parseDmc(number: string, name: string): DmcRef | undefined {
+  const m = /^DMC\s+(\S+)/i.exec(number.trim());
+  if (!m) return undefined;
+  const code = m[1].trim();
+  if (!code) return undefined;
+  return { number: code, name: name.trim() };
 }
 
 export function parseOxs(xmlText: string, name?: string): OxsParseResult {
@@ -74,8 +88,8 @@ export function parseOxs(xmlText: string, name?: string): OxsParseResult {
       colorRaw.startsWith('#') ? colorRaw : '#' + colorRaw.toUpperCase();
     const number = item.getAttribute('number') ?? '';
     const niceName = item.getAttribute('name') ?? '';
-    const label = [number, niceName].filter((s) => s && s !== 'cloth').join(' ').trim();
-    oxsPalette.set(index, { index, color: colorHex, label });
+    const dmc = parseDmc(number, niceName);
+    oxsPalette.set(index, { index, color: colorHex, dmc });
   }
 
   // Read full stitches and figure out which palindexes are actually used
@@ -90,11 +104,14 @@ export function parseOxs(xmlText: string, name?: string): OxsParseResult {
   // OXS palindex in numerical order.
   const usedSorted = [...usedPalindexes].sort((a, b) => a - b);
   const palindexMap = new Map<number, ColorIndex>();
-  const palette: (string | null)[] = [null];
+  const palette: Palette = [null];
   usedSorted.forEach((pi, i) => {
     const entry = oxsPalette.get(pi);
     if (!entry) return;
-    palette.push(entry.color);
+    const color: PaletteColor = entry.dmc
+      ? { hex: entry.color, dmc: entry.dmc }
+      : { hex: entry.color };
+    palette.push(color);
     palindexMap.set(pi, (i + 1) as ColorIndex);
   });
 

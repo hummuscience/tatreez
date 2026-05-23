@@ -1,16 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Pattern } from '../engine/types';
+import type { ColorIndex, Pattern } from '../engine/types';
 import {
   type Area,
   type Design,
   type RepeatMode,
   cmToCells,
   compositeArea,
+  flipX,
+  flipY,
   mergePalette,
   newId,
   patternPalette,
   remapCells,
   repeatFit,
+  rotateTurns,
+  trimCells,
 } from '../project/design';
 import {
   CLOTH_OPTIONS,
@@ -74,7 +78,7 @@ function buildLibrary(): LibEntry[] {
   return out;
 }
 
-export default function DesignTab({ onPlanArea, showToast }: Props) {
+export default function DesignTab({ onPlanArea }: Props) {
   const [designs, setDesigns] = useState<Design[]>([]);
   const [design, setDesign] = useState<Design | null>(null);
 
@@ -114,7 +118,6 @@ export default function DesignTab({ onPlanArea, showToast }: Props) {
       onChange={setDesign}
       onClose={() => setDesign(null)}
       onPlanArea={onPlanArea}
-      showToast={showToast}
     />
   );
 }
@@ -249,13 +252,11 @@ function DesignComposer({
   onChange,
   onClose,
   onPlanArea,
-  showToast,
 }: {
   design: Design;
   onChange: (d: Design) => void;
   onClose: () => void;
   onPlanArea: (pattern: Pattern, key: string) => void;
-  showToast: (msg: string) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -283,11 +284,13 @@ function DesignComposer({
     return [...counts.entries()].sort((a, b) => b[1] - a[1]);
   }, [library]);
 
-  // Drag-select state for making a new area (in cells).
-  const dragRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
-  const [dragRect, setDragRect] = useState<{ x: number; y: number; w: number; h: number } | null>(
-    null,
-  );
+  // Pointer interaction: either moving an area or rotating one. Move tracks
+  // the grab offset so the motif doesn't jump to the cursor's corner; rotate
+  // tracks a live preview angle that snaps to 90° on release.
+  type Interaction =
+    | { kind: 'move'; areaId: string; offX: number; offY: number }
+    | { kind: 'rotate'; areaId: string; cx: number; cy: number; angle: number };
+  const interactionRef = useRef<Interaction | null>(null);
 
   // Canvas fills the residual column width; height follows the cloth aspect
   // ratio, capped so very tall designs don't blow out the layout.
@@ -307,8 +310,15 @@ function DesignComposer({
   const canvasH = Math.min(CANVAS_MAX_H, Math.round(canvasW * aspect));
   const cs = cellSize(canvasW, canvasH, design.gridW, design.gridH);
 
+  // Pixel length of the rotate handle's stem above an area.
+  const HANDLE_STEM = 22;
+  const HANDLE_HIT = 9;
+
   // ----- rendering -----
-  useEffect(() => {
+  // Drawn imperatively (called from the effect AND from pointer handlers) so
+  // live move/rotate previews, which live in a ref, render at pointer speed
+  // without a React state churn per frame.
+  const draw = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -316,16 +326,30 @@ function DesignComposer({
     clearCanvas(ctx, canvas.width, canvas.height);
     drawGridLines(ctx, cs, design.gridW, design.gridH, 'rgba(0,0,0,0.06)');
 
+    const interaction = interactionRef.current;
+
     for (const area of design.areas) {
-      // composite + draw the area's stitches
+      const isActive = area.id === activeAreaId;
       const sub = compositeArea(area, design.palette);
+
+      // Live rotation preview: rotate the composite freely about the area
+      // centre. Otherwise draw it axis-aligned at the area position.
+      const rotating = interaction?.kind === 'rotate' && interaction.areaId === area.id;
       ctx.save();
-      ctx.translate(area.x * cs, area.y * cs);
-      drawPatternBackground(ctx, sub, cs);
+      if (rotating) {
+        const ccx = (area.x + area.w / 2) * cs;
+        const ccy = (area.y + area.h / 2) * cs;
+        ctx.translate(ccx, ccy);
+        ctx.rotate(interaction.angle);
+        ctx.translate(-area.w * cs * 0.5, -area.h * cs * 0.5);
+        drawPatternBackground(ctx, sub, cs);
+      } else {
+        ctx.translate(area.x * cs, area.y * cs);
+        drawPatternBackground(ctx, sub, cs);
+      }
       ctx.restore();
 
       // area frame
-      const isActive = area.id === activeAreaId;
       ctx.save();
       ctx.strokeStyle = isActive ? '#b5654a' : 'rgba(154,123,181,0.7)';
       ctx.lineWidth = isActive ? 2 : 1.5;
@@ -339,30 +363,45 @@ function DesignComposer({
       ctx.fillStyle = isActive ? '#b5654a' : '#9a7bb5';
       ctx.fillText(area.name, area.x * cs + 3, area.y * cs + 13);
       ctx.restore();
-    }
 
-    if (dragRect) {
-      ctx.save();
-      ctx.strokeStyle = '#b5654a';
-      ctx.fillStyle = 'rgba(181,101,74,0.08)';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 3]);
-      ctx.fillRect(dragRect.x * cs, dragRect.y * cs, dragRect.w * cs, dragRect.h * cs);
-      ctx.strokeRect(dragRect.x * cs, dragRect.y * cs, dragRect.w * cs, dragRect.h * cs);
-      ctx.restore();
+      // rotate handle on the active area: a stem + knob above the top edge
+      if (isActive) {
+        const hx = (area.x + area.w / 2) * cs;
+        const topY = area.y * cs;
+        ctx.save();
+        ctx.strokeStyle = '#b5654a';
+        ctx.fillStyle = '#b5654a';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(hx, topY);
+        ctx.lineTo(hx, topY - HANDLE_STEM);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(hx, topY - HANDLE_STEM, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
     }
-  }, [design, activeAreaId, cs, dragRect]);
+  };
+
+  // Redraw whenever the design, selection, or canvas size changes.
+  useEffect(draw);
 
   // ----- helpers -----
-  const cellAt = (clientX: number, clientY: number): [number, number] => {
+  // Pointer position in canvas pixels (accounting for CSS scaling).
+  const pointerPx = (clientX: number, clientY: number): [number, number] => {
     const canvas = canvasRef.current!;
     const r = canvas.getBoundingClientRect();
     const scale = r.width / canvas.width;
-    const x = Math.floor((clientX - r.left) / (cs * scale));
-    const y = Math.floor((clientY - r.top) / (cs * scale));
+    return [(clientX - r.left) / scale, (clientY - r.top) / scale];
+  };
+
+  const cellAt = (clientX: number, clientY: number): [number, number] => {
+    const [px, py] = pointerPx(clientX, clientY);
     return [
-      Math.max(0, Math.min(design.gridW - 1, x)),
-      Math.max(0, Math.min(design.gridH - 1, y)),
+      Math.max(0, Math.min(design.gridW - 1, Math.floor(px / cs))),
+      Math.max(0, Math.min(design.gridH - 1, Math.floor(py / cs))),
     ];
   };
 
@@ -375,6 +414,15 @@ function DesignComposer({
     return null;
   };
 
+  // Does the pointer hit the active area's rotate knob?
+  const overRotateHandle = (clientX: number, clientY: number): boolean => {
+    if (!activeArea) return false;
+    const [px, py] = pointerPx(clientX, clientY);
+    const hx = (activeArea.x + activeArea.w / 2) * cs;
+    const hy = activeArea.y * cs - HANDLE_STEM;
+    return Math.hypot(px - hx, py - hy) <= HANDLE_HIT;
+  };
+
   const updateArea = (id: string, fn: (a: Area) => Area) => {
     onChange({
       ...design,
@@ -382,57 +430,101 @@ function DesignComposer({
     });
   };
 
-  // ----- drag-select to make an area -----
+  // Apply N clockwise 90° turns to an area's content, swapping w/h on odd
+  // turns and keeping the area centred so it doesn't drift on rotation.
+  const rotateArea = (area: Area, turns: number): Area => {
+    const n = ((turns % 4) + 4) % 4;
+    if (n === 0) return area;
+    const swap = n % 2 === 1;
+    const newW = swap ? area.h : area.w;
+    const newH = swap ? area.w : area.h;
+    const ccx = area.x + area.w / 2;
+    const ccy = area.y + area.h / 2;
+    const nx = Math.round(ccx - newW / 2);
+    const ny = Math.round(ccy - newH / 2);
+    const rot = (cells: ColorIndex[][]) => rotateTurns(cells, n);
+    return {
+      ...area,
+      x: Math.max(0, Math.min(nx, design.gridW - newW)),
+      y: Math.max(0, Math.min(ny, design.gridH - newH)),
+      w: newW,
+      h: newH,
+      motifs: area.motifs.map((m) => ({ ...m, cells: rot(m.cells), x: 0, y: 0 })),
+      repeat: area.repeat ? { ...area.repeat, cells: rot(area.repeat.cells) } : undefined,
+    };
+  };
+
+  const flipArea = (area: Area, axis: 'x' | 'y'): Area => {
+    const f = axis === 'x' ? flipX : flipY;
+    return {
+      ...area,
+      motifs: area.motifs.map((m) => ({ ...m, cells: f(m.cells) })),
+      repeat: area.repeat ? { ...area.repeat, cells: f(area.repeat.cells) } : undefined,
+    };
+  };
+
+  // ----- pointer: select / move / rotate -----
   const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    // Rotate handle takes priority over body hits.
+    if (overRotateHandle(e.clientX, e.clientY) && activeArea) {
+      interactionRef.current = {
+        kind: 'rotate',
+        areaId: activeArea.id,
+        cx: activeArea.x + activeArea.w / 2,
+        cy: activeArea.y + activeArea.h / 2,
+        angle: 0,
+      };
+      return;
+    }
     const [cx, cy] = cellAt(e.clientX, e.clientY);
     const hit = areaAt(cx, cy);
     if (hit) {
       setActiveAreaId(hit.id);
-      return;
+      interactionRef.current = { kind: 'move', areaId: hit.id, offX: cx - hit.x, offY: cy - hit.y };
+    } else {
+      setActiveAreaId(null);
     }
-    dragRef.current = { x0: cx, y0: cy, x1: cx, y1: cy };
   };
 
   const onMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!dragRef.current) return;
-    const [cx, cy] = cellAt(e.clientX, e.clientY);
-    dragRef.current.x1 = cx;
-    dragRef.current.y1 = cy;
-    const d = dragRef.current;
-    setDragRect({
-      x: Math.min(d.x0, d.x1),
-      y: Math.min(d.y0, d.y1),
-      w: Math.abs(d.x1 - d.x0) + 1,
-      h: Math.abs(d.y1 - d.y0) + 1,
-    });
+    const it = interactionRef.current;
+    if (!it) return;
+    if (it.kind === 'move') {
+      const [cx, cy] = cellAt(e.clientX, e.clientY);
+      const area = design.areas.find((a) => a.id === it.areaId);
+      if (!area) return;
+      const nx = Math.max(0, Math.min(cx - it.offX, design.gridW - area.w));
+      const ny = Math.max(0, Math.min(cy - it.offY, design.gridH - area.h));
+      if (nx !== area.x || ny !== area.y) updateArea(area.id, (a) => ({ ...a, x: nx, y: ny }));
+    } else {
+      // rotate: angle from area centre to pointer; Alt snaps to 90° live.
+      const [px, py] = pointerPx(e.clientX, e.clientY);
+      const ccx = it.cx * cs;
+      const ccy = it.cy * cs;
+      let angle = Math.atan2(py - ccy, px - ccx) + Math.PI / 2; // 0 = pointing up
+      if (e.altKey) angle = Math.round(angle / (Math.PI / 2)) * (Math.PI / 2);
+      interactionRef.current = { ...it, angle };
+      draw();
+    }
   };
 
   const onMouseUp = () => {
-    const d = dragRef.current;
-    dragRef.current = null;
-    if (!d || !dragRect) {
-      setDragRect(null);
-      return;
+    const it = interactionRef.current;
+    interactionRef.current = null;
+    if (!it) return;
+    if (it.kind === 'rotate') {
+      // Snap the free angle to the nearest quarter turn (clockwise positive).
+      const turns = Math.round(it.angle / (Math.PI / 2));
+      const area = design.areas.find((a) => a.id === it.areaId);
+      if (area && ((turns % 4) + 4) % 4 !== 0) {
+        updateArea(area.id, (a) => rotateArea(a, turns));
+      } else {
+        draw(); // clear the preview transform
+      }
     }
-    const rect = dragRect;
-    setDragRect(null);
-    if (rect.w < 2 || rect.h < 2) return; // ignore tiny accidental drags
-    const name = prompt('Name this area', `area ${design.areas.length + 1}`);
-    if (name === null) return;
-    const area: Area = {
-      id: newId('area'),
-      name: name.trim() || `area ${design.areas.length + 1}`,
-      x: rect.x,
-      y: rect.y,
-      w: rect.w,
-      h: rect.h,
-      motifs: [],
-    };
-    onChange({ ...design, areas: [...design.areas, area] });
-    setActiveAreaId(area.id);
   };
 
-  // ----- drop a library card onto the canvas -----
+  // ----- drop a library card onto the canvas: make a tight 1-motif area -----
   const onDrop = (e: React.DragEvent<HTMLCanvasElement>) => {
     e.preventDefault();
     const key = e.dataTransfer.getData('text/plain');
@@ -440,52 +532,42 @@ function DesignComposer({
     if (!entry) return;
     const [cx, cy] = cellAt(e.clientX, e.clientY);
 
-    // merge the motif palette into the design palette
     const merged = mergePalette(design.palette, patternPalette(entry.pattern));
-    const cells = remapCells(entry.pattern.cells, merged.indexMap);
+    // Trim the source chart's blank margins so the area hugs the visible motif.
+    const cells = trimCells(remapCells(entry.pattern.cells, merged.indexMap));
+    const existing = areaAt(cx, cy);
 
-    let target = areaAt(cx, cy);
-    let areas = design.areas;
-
-    if (!target) {
-      // auto-wrap a new area sized to the motif, clamped on-grid
-      const ax = Math.min(cx, design.gridW - entry.pattern.width);
-      const ay = Math.min(cy, design.gridH - entry.pattern.height);
-      target = {
-        id: newId('area'),
-        name: entry.pattern.name || 'motif',
-        x: Math.max(0, ax),
-        y: Math.max(0, ay),
-        w: Math.min(entry.pattern.width, design.gridW),
-        h: Math.min(entry.pattern.height, design.gridH),
-        motifs: [],
-      };
-      areas = [...areas, target];
-    }
-
-    // if target is a repeat area and has no repeat motif yet, become the repeat motif
-    if (target.repeat && target.repeat.cells.length === 0) {
-      target = { ...target, repeat: { ...target.repeat, patternKey: key, cells } };
-    } else if (target.repeat) {
-      showToast('This area repeats one motif — clear repeat to place freely.');
-      onChange({ ...design, palette: merged.palette, areas });
+    // Dropping onto a repeat area with no motif yet sets its repeat motif.
+    if (existing?.repeat && existing.repeat.cells.length === 0) {
+      const target = { ...existing, repeat: { ...existing.repeat, patternKey: key, cells } };
+      onChange({
+        ...design,
+        palette: merged.palette,
+        areas: design.areas.map((a) => (a.id === target.id ? target : a)),
+      });
       setActiveAreaId(target.id);
       return;
-    } else {
-      // free placement: clamp top-left inside the area
-      const lx = Math.max(0, Math.min(cx - target.x, target.w - 1));
-      const ly = Math.max(0, Math.min(cy - target.y, target.h - 1));
-      const motif = { patternKey: key, cells, x: lx, y: ly };
-      target = { ...target, motifs: [...target.motifs, motif] };
     }
 
-    const finalTarget = target;
-    onChange({
-      ...design,
-      palette: merged.palette,
-      areas: areas.map((a) => (a.id === finalTarget.id ? finalTarget : a)),
-    });
-    setActiveAreaId(finalTarget.id);
+    // Otherwise create a new tight area hugging the motif, positioned at the
+    // drop point and clamped on-grid. Size = trimmed motif dimensions.
+    const mh = cells.length;
+    const mw = mh > 0 ? cells[0].length : 1;
+    const w = Math.min(mw, design.gridW);
+    const h = Math.min(mh, design.gridH);
+    const ax = Math.max(0, Math.min(cx, design.gridW - w));
+    const ay = Math.max(0, Math.min(cy, design.gridH - h));
+    const area: Area = {
+      id: newId('area'),
+      name: entry.pattern.name || 'motif',
+      x: ax,
+      y: ay,
+      w,
+      h,
+      motifs: [{ patternKey: key, cells, x: 0, y: 0 }],
+    };
+    onChange({ ...design, palette: merged.palette, areas: [...design.areas, area] });
+    setActiveAreaId(area.id);
   };
 
   const filteredLib = library.filter((l) => {
@@ -640,7 +722,7 @@ function DesignComposer({
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
             onMouseLeave={() => {
-              if (dragRef.current) onMouseUp();
+              if (interactionRef.current) onMouseUp();
             }}
             onDragOver={(e) => {
               e.preventDefault();
@@ -649,8 +731,8 @@ function DesignComposer({
             onDrop={onDrop}
           />
           <p className="design-canvas-hint">
-            Drag-select an empty region to make an area · drag a pattern from the left onto the
-            canvas
+            Drag a pattern from the left onto the canvas · drag a placed motif to move it · use the
+            handle above it to rotate (hold Alt to snap to 90°)
           </p>
         </div>
 
@@ -659,6 +741,8 @@ function DesignComposer({
           <AreaInspector
             area={activeArea}
             updateArea={updateArea}
+            onRotate={(a) => updateArea(a.id, (cur) => rotateArea(cur, 1))}
+            onFlip={(a, axis) => updateArea(a.id, (cur) => flipArea(cur, axis))}
             onDeleteArea={(id) => {
               onChange({ ...design, areas: design.areas.filter((a) => a.id !== id) });
               setActiveAreaId(null);
@@ -762,11 +846,15 @@ function ClothBar({
 function AreaInspector({
   area,
   updateArea,
+  onRotate,
+  onFlip,
   onDeleteArea,
   onPlanArea,
 }: {
   area: Area | null;
   updateArea: (id: string, fn: (a: Area) => Area) => void;
+  onRotate: (a: Area) => void;
+  onFlip: (a: Area, axis: 'x' | 'y') => void;
   onDeleteArea: (id: string) => void;
   onPlanArea: (a: Area) => void;
 }) {
@@ -777,11 +865,13 @@ function AreaInspector({
         <span dir="rtl">المنطقة</span>
       </div>
       {!area ? (
-        <p className="empty-hint">Select or drag-select an area on the canvas.</p>
+        <p className="empty-hint">Drop a pattern on the canvas, then click it to select.</p>
       ) : (
         <AreaPanel
           area={area}
           updateArea={updateArea}
+          onRotate={onRotate}
+          onFlip={onFlip}
           onDeleteArea={onDeleteArea}
           onPlanArea={onPlanArea}
         />
@@ -793,11 +883,15 @@ function AreaInspector({
 function AreaPanel({
   area,
   updateArea,
+  onRotate,
+  onFlip,
   onDeleteArea,
   onPlanArea,
 }: {
   area: Area;
   updateArea: (id: string, fn: (a: Area) => Area) => void;
+  onRotate: (a: Area) => void;
+  onFlip: (a: Area, axis: 'x' | 'y') => void;
   onDeleteArea: (id: string) => void;
   onPlanArea: (a: Area) => void;
 }) {
@@ -816,29 +910,51 @@ function AreaPanel({
           onChange={(e) => updateArea(area.id, (a) => ({ ...a, name: e.target.value }))}
         />
       </label>
-      <div className="design-area-size">
-        <label className="field">
-          <span>W</span>
-          <input
-            type="number"
-            min={1}
-            value={area.w}
-            onChange={(e) =>
-              updateArea(area.id, (a) => ({ ...a, w: Math.max(1, Number(e.target.value) || 1) }))
-            }
-          />
-        </label>
-        <label className="field">
-          <span>H</span>
-          <input
-            type="number"
-            min={1}
-            value={area.h}
-            onChange={(e) =>
-              updateArea(area.id, (a) => ({ ...a, h: Math.max(1, Number(e.target.value) || 1) }))
-            }
-          />
-        </label>
+
+      {repeating ? (
+        // Repeat areas have a manual fill region — keep W/H editable.
+        <div className="design-area-size">
+          <label className="field">
+            <span>W</span>
+            <input
+              type="number"
+              min={1}
+              value={area.w}
+              onChange={(e) =>
+                updateArea(area.id, (a) => ({ ...a, w: Math.max(1, Number(e.target.value) || 1) }))
+              }
+            />
+          </label>
+          <label className="field">
+            <span>H</span>
+            <input
+              type="number"
+              min={1}
+              value={area.h}
+              onChange={(e) =>
+                updateArea(area.id, (a) => ({ ...a, h: Math.max(1, Number(e.target.value) || 1) }))
+              }
+            />
+          </label>
+        </div>
+      ) : (
+        // Single-motif areas hug the motif — size is derived, not editable.
+        <div className="design-area-count">
+          {area.w}×{area.h} cells · at ({area.x}, {area.y})
+        </div>
+      )}
+
+      {/* Transform: rotate 90° + flip. Mirror the canvas rotate handle. */}
+      <div className="design-transform">
+        <button type="button" className="chip" onClick={() => onRotate(area)} title="Rotate 90° clockwise">
+          ⟳ 90°
+        </button>
+        <button type="button" className="chip" onClick={() => onFlip(area, 'x')} title="Flip horizontally">
+          ⇋ Flip X
+        </button>
+        <button type="button" className="chip" onClick={() => onFlip(area, 'y')} title="Flip vertically">
+          ⇅ Flip Y
+        </button>
       </div>
 
       <label className="design-fit-toggle">

@@ -57,10 +57,24 @@ describe('parseOxs', () => {
     expect(r.pattern.name).toBe('Test pattern');
   });
 
-  it('builds a per-pattern palette from used palindexes', () => {
+  it('builds a per-pattern palette from used palindexes, with DMC', () => {
     if (typeof globalThis.DOMParser === 'undefined') return;
     const r = parseOxs(SIMPLE_OXS);
-    expect(r.pattern.palette).toEqual([null, '#0C0C0C', '#DD0000']);
+    expect(r.pattern.palette).toEqual([
+      null,
+      { hex: '#0C0C0C', dmc: { number: '310', name: 'Black' } },
+      { hex: '#DD0000', dmc: { number: '666', name: 'Christmas Red Bright' } },
+    ]);
+  });
+
+  it('omits dmc for non-DMC palette entries (e.g. Ecru)', () => {
+    if (typeof globalThis.DOMParser === 'undefined') return;
+    const ecruOxs = SIMPLE_OXS.replace(
+      '<palette_item index="2" number="DMC 666" name="Christmas Red Bright" color="DD0000"/>',
+      '<palette_item index="2" number="Ecru" name="(Ecru)" color="EEDDCD"/>',
+    );
+    const r = parseOxs(ecruOxs);
+    expect(r.pattern.palette?.[2]).toEqual({ hex: '#EEDDCD' });
   });
 
   it('places stitches at the right (0-indexed) cells', () => {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { BUILTIN_PATTERNS, clonePattern } from '../patterns/builtin';
+import { BUILTIN_PATTERNS, clonePattern, getPaletteColors } from '../patterns/builtin';
 import { TIRAZAIN_ARCHIVE } from '../patterns/tirazainArchive';
 import {
   builtinPatternKey,
@@ -459,6 +459,9 @@ function PatternCard({ pattern: p, onClick, badge, onDelete }: PatternCardProps)
   const arabicName = p.nameAr ?? p.source?.arabicName ?? '';
   const region = p.source?.region;
   const sourceUrl = p.source?.url;
+  const colors = getPaletteColors(p).filter((c) => c != null) as NonNullable<
+    ReturnType<typeof getPaletteColors>[number]
+  >[];
   return (
     <button className="card pat-card" onClick={onClick} type="button">
       <div className="pat-thumb-wrap">
@@ -483,6 +486,18 @@ function PatternCard({ pattern: p, onClick, badge, onDelete }: PatternCardProps)
           )}
           {badge && <span className="pat-badge">{badge}</span>}
         </div>
+        {colors.length > 0 && (
+          <div className="pat-dmc">
+            {colors.map((c, i) => (
+              <span
+                key={i}
+                className="pat-dmc-chip"
+                style={{ background: c.hex }}
+                title={c.dmc ? `DMC ${c.dmc.number} · ${c.dmc.name}` : c.hex}
+              />
+            ))}
+          </div>
+        )}
         {sourceUrl && (
           <a
             href={sourceUrl}

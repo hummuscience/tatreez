@@ -1,4 +1,4 @@
-import type { ColorIndex, Pattern } from '../engine/types';
+import type { ColorIndex, Palette, PaletteColor, Pattern } from '../engine/types';
 
 const c = (rows: number[][]): ColorIndex[][] => rows.map((r) => r.map((v) => v as ColorIndex));
 
@@ -57,7 +57,7 @@ export const BUILTIN_PATTERNS: Record<string, Pattern> = {
       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     ]),
-    palette: [null, '#D21D22'],
+    palette: [null, { hex: '#D21D22', dmc: { number: '3801', name: 'Christmas Red LT' } }],
   },
   cypressTree: {
     name: 'Cypress Tree (Sarw)',
@@ -95,7 +95,11 @@ export const BUILTIN_PATTERNS: Record<string, Pattern> = {
       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     ]),
-    palette: [null, '#5977A6', '#E04B91'],
+    palette: [
+      null,
+      { hex: '#5977A6', dmc: { number: '3838', name: 'Lavender Blue DK' } },
+      { hex: '#E04B91', dmc: { number: '603', name: 'Pink Mauve Med' } },
+    ],
   },
   moonOfBethlehem: {
     name: 'Najma (Star)',
@@ -120,7 +124,11 @@ export const BUILTIN_PATTERNS: Record<string, Pattern> = {
       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     ]),
-    palette: [null, '#D21D22', '#E04B91'],
+    palette: [
+      null,
+      { hex: '#D21D22', dmc: { number: '3801', name: 'Christmas Red LT' } },
+      { hex: '#E04B91', dmc: { number: '603', name: 'Pink Mauve Med' } },
+    ],
   },
   oldMansTeeth: {
     name: "Old Man's Teeth (Snan El 'Ajouz)",
@@ -148,19 +156,49 @@ export const PALETTE: { name: string; color: string | null }[] = [
 ];
 
 /**
- * Resolve the effective colour palette for a pattern. Returns the
- * pattern's own `palette` field if set (per-pattern palette), otherwise
- * falls back to the global PALETTE. Always indexed 0..N where 0 is
- * empty (returns null for index 0).
+ * Upgrade a possibly-legacy palette to the {@link Palette} object shape.
+ * Accepts either the current `(PaletteColor | null)[]` or the legacy
+ * hex-only `(string | null)[]` and returns the object shape. Idempotent.
+ *
+ * Persisted localStorage data and any not-yet-reimported source may carry
+ * the legacy shape; call this at every load boundary so the rest of the
+ * code only ever sees `PaletteColor` objects.
+ */
+export function normalizePalette(raw: unknown): Palette {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((entry) => {
+    if (entry == null) return null;
+    if (typeof entry === 'string') return { hex: entry };
+    if (typeof entry === 'object' && typeof (entry as PaletteColor).hex === 'string') {
+      const e = entry as PaletteColor;
+      return e.dmc ? { hex: e.hex, dmc: { ...e.dmc } } : { hex: e.hex };
+    }
+    return null;
+  });
+}
+
+/**
+ * Resolve the effective colour palette for a pattern as **hex strings**
+ * (the rendering path). Returns the pattern's own palette if set,
+ * otherwise the global PALETTE. Index 0 is empty (null).
  *
  * Use this everywhere that paints cells from a pattern — never index
  * into the global PALETTE directly when displaying a pattern's cells.
  */
 export function getPalette(pattern: Pattern): (string | null)[] {
+  return getPaletteColors(pattern).map((c) => (c == null ? null : c.hex));
+}
+
+/**
+ * Resolve the effective colour palette as {@link PaletteColor} objects
+ * (hex + optional DMC). Use this where DMC metadata is needed (editor
+ * swatches, plans material list, library cards). Index 0 is empty (null).
+ */
+export function getPaletteColors(pattern: Pattern): Palette {
   if (pattern.palette && pattern.palette.length > 0) {
-    return pattern.palette;
+    return normalizePalette(pattern.palette);
   }
-  return PALETTE.map((p) => p.color);
+  return PALETTE.map((p) => (p.color == null ? null : { hex: p.color }));
 }
 
 export function emptyPattern(width: number, height: number, name = 'Untitled'): Pattern {
@@ -179,7 +217,7 @@ export function clonePattern(p: Pattern): Pattern {
     height: p.height,
     cells: p.cells.map((row) => row.slice()),
   };
-  if (p.palette) out.palette = p.palette.slice();
+  if (p.palette) out.palette = normalizePalette(p.palette);
   if (p.source) out.source = { ...p.source };
   return out;
 }
