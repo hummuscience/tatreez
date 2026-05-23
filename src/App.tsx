@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { Pattern } from './engine/types';
 import { emptyPattern } from './patterns/builtin';
 import { useToast } from './ui/useToast';
@@ -7,8 +7,9 @@ import EditorTab from './ui/EditorTab';
 import PlanTab from './ui/PlanTab';
 import GroundTruthTab from './ui/GroundTruthTab';
 import ImportTab from './ui/ImportTab';
+import DesignTab from './ui/DesignTab';
 
-type TabName = 'library' | 'editor' | 'import' | 'plans' | 'gt';
+type TabName = 'library' | 'editor' | 'import' | 'design' | 'plans' | 'gt';
 
 interface TabDef {
   key: TabName;
@@ -20,6 +21,7 @@ const TABS: TabDef[] = [
   { key: 'library', en: 'Library', ar: 'المكتبة' },
   { key: 'editor', en: 'Editor', ar: 'المحرر' },
   { key: 'import', en: 'Import', ar: 'استيراد' },
+  { key: 'design', en: 'Design', ar: 'التصميم' },
   { key: 'plans', en: 'Plans', ar: 'الخطط' },
   { key: 'gt', en: 'Ground truth', ar: 'الحقيقة المرجعية' },
 ];
@@ -30,8 +32,40 @@ export interface PatternState {
   patternKey: string | null;
 }
 
+const VALID_TABS = new Set<TabName>(TABS.map((t) => t.key));
+
+/** Parse a tab from a URL hash like "#editor", falling back to library. */
+function tabFromHash(): TabName {
+  const raw = window.location.hash.replace(/^#/, '') as TabName;
+  return VALID_TABS.has(raw) ? raw : 'library';
+}
+
 export default function App() {
-  const [tab, setTab] = useState<TabName>('library');
+  const [tab, setTab] = useState<TabName>(tabFromHash);
+
+  // Mirror the active tab into browser history so the back/forward buttons
+  // return to the previously viewed tab. State is the source of truth; the
+  // hash just reflects it. `navigate` pushes a new entry; `popstate` restores
+  // without pushing.
+  const navigate = useCallback((next: TabName) => {
+    setTab(next);
+    window.history.pushState({ tab: next }, '', '#' + next);
+  }, []);
+
+  useEffect(() => {
+    // Seed the first history entry so the initial view is well-formed and a
+    // refresh on a deep-linked tab stays put.
+    window.history.replaceState({ tab }, '', '#' + tab);
+    const onPop = (e: PopStateEvent) => {
+      const next = (e.state?.tab as TabName) ?? tabFromHash();
+      setTab(VALID_TABS.has(next) ? next : 'library');
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+    // Run once on mount; `tab` here is only the initial value by design.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [state, setState] = useState<PatternState>({
     pattern: emptyPattern(14, 14),
     patternKey: null,
@@ -51,9 +85,9 @@ export default function App() {
   const loadAndShowPlans = useCallback(
     (pattern: Pattern, patternKey: string | null) => {
       setPattern(pattern, patternKey);
-      setTab('plans');
+      navigate('plans');
     },
-    [setPattern],
+    [setPattern, navigate],
   );
 
   return (
@@ -85,7 +119,7 @@ export default function App() {
           <button
             key={t.key}
             className={`tab${tab === t.key ? ' tab-active' : ''}`}
-            onClick={() => setTab(t.key)}
+            onClick={() => navigate(t.key)}
             type="button"
           >
             <span className="tab-en">{t.en}</span>
@@ -108,17 +142,20 @@ export default function App() {
               setPattern(pattern, key);
               showToast('Pattern saved to library');
             }}
-            onGoToPlans={() => setTab('plans')}
+            onGoToPlans={() => navigate('plans')}
           />
         )}
         {tab === 'import' && (
           <ImportTab
             onSendToEditor={(p) => {
               setPattern(p, null);
-              setTab('editor');
+              navigate('editor');
             }}
             showToast={showToast}
           />
+        )}
+        {tab === 'design' && (
+          <DesignTab onPlanArea={loadAndShowPlans} showToast={showToast} />
         )}
         {tab === 'plans' && <PlanTab state={state} />}
         {tab === 'gt' && <GroundTruthTab state={state} showToast={showToast} />}

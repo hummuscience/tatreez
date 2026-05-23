@@ -6,7 +6,7 @@ import { DEFAULT_WEIGHTS, optimizeColourOrder, type OptimalWeights } from '../en
 import { planAsPrimitives, describePrimitive, type Primitive } from '../engine/primitives';
 import { getGroundTruth } from '../storage/storage';
 import { getCanonicalGroundTruth } from '../patterns/groundTruths';
-import { cellSize, clearCanvas, drawGridLines, drawPatternBackground } from './canvasUtil';
+import { GUTTER, cellSize, clearCanvas, drawAxisLabels, drawGridLines, drawPatternBackground } from './canvasUtil';
 import { getPalette } from '../patterns/builtin';
 import {
   CLOTH_OPTIONS,
@@ -198,9 +198,16 @@ export default function PlanTab({ state }: Props) {
     const bctx = bc.getContext('2d');
     if (!fctx || !bctx) return;
 
-    const cs = cellSize(fc.width, fc.height, pattern.width, pattern.height);
+    const cs = cellSize(fc.width - GUTTER, fc.height - GUTTER, pattern.width, pattern.height);
     clearCanvas(fctx, fc.width, fc.height);
     clearCanvas(bctx, bc.width, bc.height);
+
+    drawAxisLabels(fctx, cs, pattern.width, pattern.height);
+    drawAxisLabels(bctx, cs, pattern.width, pattern.height);
+    fctx.save();
+    fctx.translate(GUTTER, GUTTER);
+    bctx.save();
+    bctx.translate(GUTTER, GUTTER);
 
     drawPatternBackground(fctx, pattern, cs, 0.18);
     drawGridLines(fctx, cs, pattern.width, pattern.height, 'rgba(0,0,0,0.08)');
@@ -345,6 +352,9 @@ export default function PlanTab({ state }: Props) {
         }
       }
     }
+
+    fctx.restore();
+    bctx.restore();
   }, [pattern, activePlan, step, activeThread, palette]);
 
   // ---------- Action panel text ----------

@@ -3,7 +3,7 @@ import type { Corner, GroundTruthPart } from '../engine/types';
 import { pointsToSteps } from '../engine/groundTruth';
 import { getGroundTruth, setGroundTruth } from '../storage/storage';
 import { getCanonicalGroundTruth } from '../patterns/groundTruths';
-import { cellSize, clearCanvas, drawGridLines, drawPatternBackground } from './canvasUtil';
+import { GUTTER, cellSize, clearCanvas, drawAxisLabels, drawGridLines, drawPatternBackground } from './canvasUtil';
 import type { PatternState } from '../App';
 
 interface Props {
@@ -80,9 +80,12 @@ export default function GroundTruthTab({ state, showToast }: Props) {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const cs = cellSize(canvas.width, canvas.height, pattern.width, pattern.height);
+    const cs = cellSize(canvas.width - GUTTER, canvas.height - GUTTER, pattern.width, pattern.height);
 
     clearCanvas(ctx, canvas.width, canvas.height);
+    drawAxisLabels(ctx, cs, pattern.width, pattern.height);
+    ctx.save();
+    ctx.translate(GUTTER, GUTTER);
     drawPatternBackground(ctx, pattern, cs, 0.25);
     drawGridLines(ctx, cs, pattern.width, pattern.height, 'rgba(0,0,0,0.10)');
 
@@ -141,6 +144,7 @@ export default function GroundTruthTab({ state, showToast }: Props) {
       ctx.fillText(String(i + 1), p[0] * cs + 4, p[1] * cs - 2);
     }
 
+    ctx.restore();
     canvas.dataset.frontLegs = String(frontLegs);
   }, [pattern, points, threadStarts, partOfPoint]);
 
@@ -148,10 +152,10 @@ export default function GroundTruthTab({ state, showToast }: Props) {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const r = canvas.getBoundingClientRect();
-    const cs = cellSize(canvas.width, canvas.height, pattern.width, pattern.height);
+    const cs = cellSize(canvas.width - GUTTER, canvas.height - GUTTER, pattern.width, pattern.height);
     const scale = r.width / canvas.width;
-    const fx = (e.clientX - r.left) / (cs * scale);
-    const fy = (e.clientY - r.top) / (cs * scale);
+    const fx = (e.clientX - r.left - GUTTER * scale) / (cs * scale);
+    const fy = (e.clientY - r.top - GUTTER * scale) / (cs * scale);
     const x = Math.round(fx);
     const y = Math.round(fy);
     if (x < 0 || y < 0 || x > pattern.width || y > pattern.height) return;

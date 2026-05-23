@@ -3,7 +3,7 @@ import type { ColorIndex, Pattern } from '../engine/types';
 import { PALETTE, emptyPattern } from '../patterns/builtin';
 import { countRegions, countStitches } from '../engine/regions';
 import { savePattern, savedPatternKey } from '../storage/storage';
-import { cellSize, clearCanvas, drawGridLines, drawPatternBackground } from './canvasUtil';
+import { GUTTER, cellSize, clearCanvas, drawAxisLabels, drawGridLines, drawPatternBackground } from './canvasUtil';
 import type { PatternState } from '../App';
 
 interface Props {
@@ -39,22 +39,26 @@ export default function EditorTab({ state, onChangePattern, onSaved, onGoToPlans
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const cs = cellSize(canvas.width, canvas.height, pattern.width, pattern.height);
+    const cs = cellSize(canvas.width - GUTTER, canvas.height - GUTTER, pattern.width, pattern.height);
     clearCanvas(ctx, canvas.width, canvas.height);
+    drawAxisLabels(ctx, cs, pattern.width, pattern.height);
+    ctx.save();
+    ctx.translate(GUTTER, GUTTER);
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, pattern.width * cs, pattern.height * cs);
     drawPatternBackground(ctx, pattern, cs);
     drawGridLines(ctx, cs, pattern.width, pattern.height, 'rgba(0,0,0,0.12)');
+    ctx.restore();
   }, [pattern]);
 
   const cellAt = (clientX: number, clientY: number): [number, number] | null => {
     const canvas = canvasRef.current;
     if (!canvas) return null;
     const r = canvas.getBoundingClientRect();
-    const cs = cellSize(canvas.width, canvas.height, pattern.width, pattern.height);
+    const cs = cellSize(canvas.width - GUTTER, canvas.height - GUTTER, pattern.width, pattern.height);
     const scale = r.width / canvas.width;
-    const x = Math.floor((clientX - r.left) / (cs * scale));
-    const y = Math.floor((clientY - r.top) / (cs * scale));
+    const x = Math.floor((clientX - r.left - GUTTER * scale) / (cs * scale));
+    const y = Math.floor((clientY - r.top - GUTTER * scale) / (cs * scale));
     if (x < 0 || y < 0 || x >= pattern.width || y >= pattern.height) return null;
     return [x, y];
   };

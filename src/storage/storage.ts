@@ -1,7 +1,9 @@
 import type { GroundTruth, Pattern } from '../engine/types';
+import type { Design } from '../project/design';
 
 const PATTERN_PREFIX = 'tatreez:pattern:';
 const GT_PREFIX = 'tatreez:gt:';
+const DESIGN_PREFIX = 'tatreez:design:';
 
 export interface SavedPattern {
   id: string;
@@ -88,4 +90,37 @@ export function clearGroundTruth(patternKey: string): void {
   const ls = safeLocalStorage();
   if (!ls) return;
   ls.removeItem(GT_PREFIX + patternKey);
+}
+
+// ---------- Designs ----------
+
+export function listDesigns(): Design[] {
+  const ls = safeLocalStorage();
+  if (!ls) return [];
+  const out: Design[] = [];
+  for (let i = 0; i < ls.length; i++) {
+    const key = ls.key(i);
+    if (!key || !key.startsWith(DESIGN_PREFIX)) continue;
+    const raw = ls.getItem(key);
+    if (!raw) continue;
+    try {
+      out.push(JSON.parse(raw) as Design);
+    } catch {
+      // skip corrupted
+    }
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Persist a design (insert or update by its `id`). */
+export function saveDesign(design: Design): void {
+  const ls = safeLocalStorage();
+  if (!ls) return;
+  ls.setItem(DESIGN_PREFIX + design.id, JSON.stringify(design));
+}
+
+export function deleteDesign(id: string): void {
+  const ls = safeLocalStorage();
+  if (!ls) return;
+  ls.removeItem(DESIGN_PREFIX + id);
 }
