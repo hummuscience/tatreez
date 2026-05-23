@@ -603,115 +603,123 @@ function DesignComposer({
     setFitOnly(false);
   };
 
+  // Split the capped results between the L's two arms: a left column and a
+  // bottom strip. Caps keep the L full without per-strip scroll fights —
+  // narrow the dropdowns to reach motifs beyond the cap.
+  const LEFT_CAP = 14;
+  const BOTTOM_CAP = 10;
+  const leftMotifs = filteredLib.slice(0, LEFT_CAP);
+  const bottomMotifs = filteredLib.slice(LEFT_CAP, LEFT_CAP + BOTTOM_CAP);
+  const totalShown = Math.min(filteredLib.length, LEFT_CAP + BOTTOM_CAP);
+
   return (
     <div className="design-composer">
       {/* Top: cloth + size + strands — the first choice, full width */}
       <ClothBar design={design} onChange={onChange} onClose={onClose} />
 
-      <div className="design-body">
-        {/* Left: library browser with full filters */}
-        <aside className="design-lib">
-          <div className="design-lib-head">
-            <span className="design-lib-title">Patterns</span>
-            <span className="design-lib-title-ar" dir="rtl">
-              الأنماط
-            </span>
-            {anyFilter && (
-              <button className="btn-ghost btn-sm" type="button" onClick={clearFilters}>
-                Clear
-              </button>
-            )}
-          </div>
+      {/* Filter row: search + compact dropdowns, one line */}
+      <div className="design-filterbar">
+        <label className="filter-search">
+          <SearchIcon />
+          <input
+            type="search"
+            placeholder="Search patterns…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label="Search patterns"
+          />
+        </label>
 
-          <label className="filter-search">
-            <SearchIcon />
-            <input
-              type="search"
-              placeholder="Search by name, region, Arabic name…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              aria-label="Search patterns"
-            />
-          </label>
+        {regions.length > 0 && (
+          <select
+            className="design-filter-select"
+            value={fRegion ?? ''}
+            onChange={(e) => setFRegion(e.target.value || null)}
+            aria-label="Region"
+          >
+            <option value="">Region · المنطقة</option>
+            {regions.map(([region, count]) => (
+              <option key={region} value={region}>
+                {region} ({count})
+              </option>
+            ))}
+          </select>
+        )}
 
-          <div className="filters">
-            <label className="design-fit-toggle">
-              <input
-                type="checkbox"
-                checked={fitOnly}
-                disabled={!activeArea}
-                onChange={(e) => setFitOnly(e.target.checked)}
-              />
-              Fits active area{activeArea ? ` (≤ ${activeArea.w}×${activeArea.h})` : ''}
-            </label>
+        <select
+          className="design-filter-select"
+          value={fColors ?? ''}
+          onChange={(e) => setFColors(e.target.value ? (Number(e.target.value) as ColorBucket) : null)}
+          aria-label="Colors"
+        >
+          <option value="">Colors · الألوان</option>
+          {COLOR_BUCKETS.map((n) => (
+            <option key={n} value={n}>
+              {n === 5 ? '5+ colors' : `${n} color${n === 1 ? '' : 's'}`}
+            </option>
+          ))}
+        </select>
 
-            {regions.length > 0 && (
-              <FilterRow label="Region" labelAr="المنطقة">
-                {regions.map(([region, count]) => (
-                  <Chip
-                    key={region}
-                    active={fRegion === region}
-                    onClick={() => setFRegion(fRegion === region ? null : region)}
-                  >
-                    {region} <span className="chip-count">{count}</span>
-                  </Chip>
-                ))}
-              </FilterRow>
-            )}
+        <select
+          className="design-filter-select"
+          value={fSize ?? ''}
+          onChange={(e) => setFSize((e.target.value || null) as SizeBucket | null)}
+          aria-label="Size"
+        >
+          <option value="">Size · الحجم</option>
+          {SIZE_FILTERS.map(([bucket, label]) => (
+            <option key={bucket} value={bucket}>
+              {label}
+            </option>
+          ))}
+        </select>
 
-            <FilterRow label="Colors" labelAr="الألوان">
-              {COLOR_BUCKETS.map((n) => (
-                <Chip key={n} active={fColors === n} onClick={() => setFColors(fColors === n ? null : n)}>
-                  {n === 5 ? '5+' : n}
-                </Chip>
-              ))}
-            </FilterRow>
+        <select
+          className="design-filter-select"
+          value={fComplexity ?? ''}
+          onChange={(e) => setFComplexity((e.target.value || null) as ComplexityBucket | null)}
+          aria-label="Complexity"
+        >
+          <option value="">Complexity · التعقيد</option>
+          {COMPLEXITY_FILTERS.map(([bucket, label]) => (
+            <option key={bucket} value={bucket}>
+              {label}
+            </option>
+          ))}
+        </select>
 
-            <FilterRow label="Size" labelAr="الحجم">
-              {SIZE_FILTERS.map(([bucket, label]) => (
-                <Chip key={bucket} active={fSize === bucket} onClick={() => setFSize(fSize === bucket ? null : bucket)}>
-                  {label}
-                </Chip>
-              ))}
-            </FilterRow>
+        <label className="design-fit-toggle">
+          <input
+            type="checkbox"
+            checked={fitOnly}
+            disabled={!activeArea}
+            onChange={(e) => setFitOnly(e.target.checked)}
+          />
+          Fits area
+        </label>
 
-            <FilterRow label="Complexity" labelAr="التعقيد">
-              {COMPLEXITY_FILTERS.map(([bucket, label]) => (
-                <Chip
-                  key={bucket}
-                  active={fComplexity === bucket}
-                  onClick={() => setFComplexity(fComplexity === bucket ? null : bucket)}
-                >
-                  {label}
-                </Chip>
-              ))}
-            </FilterRow>
-          </div>
+        <span className="design-filter-count">
+          {filteredLib.length === 0
+            ? 'no matches'
+            : `${totalShown} of ${filteredLib.length}`}
+        </span>
+        {anyFilter && (
+          <button className="btn-ghost btn-sm" type="button" onClick={clearFilters}>
+            Clear
+          </button>
+        )}
+      </div>
 
-          <div className="design-lib-grid">
-            {filteredLib.length === 0 ? (
-              <p className="empty-hint">No patterns match.</p>
-            ) : (
-              filteredLib.slice(0, 120).map((l) => (
-                <div
-                  key={l.key}
-                  className="design-lib-card"
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData('text/plain', l.key);
-                    e.dataTransfer.effectAllowed = 'copy';
-                  }}
-                  title={`${l.pattern.name} · ${l.pattern.width}×${l.pattern.height}`}
-                >
-                  <PatternThumb pattern={l.pattern} width={104} height={82} />
-                  <div className="design-lib-card-name">{l.pattern.name}</div>
-                </div>
-              ))
-            )}
-          </div>
+      {/* L-shape: left motif column + canvas + right inspector, then bottom strip */}
+      <div className="design-body-l">
+        <aside className="design-motif-col">
+          {leftMotifs.length === 0 ? (
+            <p className="empty-hint">No patterns match.</p>
+          ) : (
+            leftMotifs.map((l) => <MotifCard key={l.key} entry={l} />)
+          )}
         </aside>
 
-        {/* Center: canvas fills residual width */}
         <div className="design-canvas-wrap" ref={wrapRef}>
           <canvas
             ref={canvasRef}
@@ -731,12 +739,11 @@ function DesignComposer({
             onDrop={onDrop}
           />
           <p className="design-canvas-hint">
-            Drag a pattern from the left onto the canvas · drag a placed motif to move it · use the
-            handle above it to rotate (hold Alt to snap to 90°)
+            Drag a pattern onto the canvas · drag a placed motif to move it · use the handle above it
+            to rotate (hold Alt to snap to 90°)
           </p>
         </div>
 
-        {/* Right: area inspector */}
         <aside className="design-inspector">
           <AreaInspector
             area={activeArea}
@@ -753,7 +760,32 @@ function DesignComposer({
             }}
           />
         </aside>
+
+        {/* Bottom strip: continues the L under the left column + canvas */}
+        <div className="design-motif-strip">
+          {bottomMotifs.map((l) => (
+            <MotifCard key={l.key} entry={l} />
+          ))}
+        </div>
       </div>
+    </div>
+  );
+}
+
+/** A draggable motif thumbnail used in both arms of the L. */
+function MotifCard({ entry }: { entry: LibEntry }) {
+  return (
+    <div
+      className="design-lib-card"
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/plain', entry.key);
+        e.dataTransfer.effectAllowed = 'copy';
+      }}
+      title={`${entry.pattern.name} · ${entry.pattern.width}×${entry.pattern.height}`}
+    >
+      <PatternThumb pattern={entry.pattern} width={104} height={82} />
+      <div className="design-lib-card-name">{entry.pattern.name}</div>
     </div>
   );
 }
@@ -1048,47 +1080,7 @@ function AreaPanel({
   );
 }
 
-// ---------- Filter UI helpers (mirror the Library tab) ----------
-
-function FilterRow({
-  label,
-  labelAr,
-  children,
-}: {
-  label: string;
-  labelAr?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="filter-row">
-      <div className="filter-label">
-        <span>{label}</span>
-        {labelAr && (
-          <span className="filter-label-ar" dir="rtl">
-            {labelAr}
-          </span>
-        )}
-      </div>
-      <div className="filter-chips">{children}</div>
-    </div>
-  );
-}
-
-function Chip({
-  children,
-  active,
-  onClick,
-}: {
-  children: React.ReactNode;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button type="button" className={`chip${active ? ' chip-active' : ''}`} onClick={onClick}>
-      {children}
-    </button>
-  );
-}
+// ---------- Filter UI helpers ----------
 
 function SearchIcon() {
   return (

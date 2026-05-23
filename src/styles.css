@@ -365,30 +365,40 @@ body {
 .design-clothbar-meta { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); align-self: center; white-space: nowrap; }
 .field-inline { min-width: 110px; }
 
-/* body: wider library · residual canvas · inspector */
-.design-body { display: grid; grid-template-columns: 320px minmax(0, 1fr) 280px; gap: 16px; align-items: start; }
+/* Filter bar: search + compact dropdowns on one line */
+.design-filterbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; border: 1px solid var(--rule); border-radius: var(--card-radius); padding: 10px 14px; background: var(--surface); }
+.design-filterbar .filter-search { flex: 1 1 200px; min-width: 160px; }
+.design-filter-select { font: inherit; font-size: 12px; padding: 6px 8px; border: 1px solid var(--rule); border-radius: var(--input-radius); background: var(--surface-deep); color: var(--ink); }
+.design-filter-count { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); white-space: nowrap; }
+.design-fit-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-soft); white-space: nowrap; }
 
-.design-lib { display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--rule); border-radius: var(--card-radius); padding: 14px; background: var(--surface); }
-.design-lib-head { display: flex; align-items: baseline; gap: 10px; flex: 0 0 auto; }
-.design-lib-title { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink); }
-.design-lib-title-ar { font-family: var(--font-arabic); font-size: 12px; color: var(--ink-soft); margin-right: auto; }
-.design-fit-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-soft); }
-/* Filters render in full (no inner scroll). The pattern grid below scrolls and
-   has a fixed viewport height so it's always visible regardless of how many
-   filter rows are showing. */
-.design-lib .filters { flex: 0 0 auto; }
-.design-lib-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; overflow-y: auto; flex: 1 1 auto; height: 360px; align-content: start; }
+/* L-shape body: left motif column + canvas + inspector, then a bottom strip
+   that continues the L under the left column and canvas. */
+.design-body-l {
+  display: grid;
+  grid-template-columns: 124px minmax(0, 1fr) 280px;
+  grid-template-rows: auto auto;
+  grid-template-areas:
+    "motifs canvas inspector"
+    "strip  strip  inspector";
+  gap: 14px;
+  align-items: start;
+}
+.design-motif-col { grid-area: motifs; display: flex; flex-direction: column; gap: 8px; }
+.design-canvas-wrap { grid-area: canvas; display: flex; flex-direction: column; gap: 8px; align-items: stretch; min-width: 0; }
+.design-motif-strip { grid-area: strip; display: flex; flex-wrap: wrap; gap: 8px; }
+.design-motif-strip .design-lib-card { width: 104px; }
+
 .design-lib-card { border: 1px solid var(--rule); border-radius: var(--input-radius); padding: 4px; background: var(--surface-deep); cursor: grab; text-align: center; }
 .design-lib-card:hover { border-color: var(--accent); }
 .design-lib-card:active { cursor: grabbing; }
 .design-lib-card canvas { width: 100%; height: auto; display: block; }
 .design-lib-card-name { font-size: 10px; color: var(--ink-soft); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.design-canvas-wrap { display: flex; flex-direction: column; gap: 8px; align-items: stretch; min-width: 0; }
 .design-canvas { width: 100%; height: auto; display: block; border: 1px solid var(--rule-strong); border-radius: 4px; background: var(--surface); cursor: crosshair; }
 .design-canvas-hint { font-family: var(--font-mono); font-size: 10px; color: var(--ink-soft); text-align: center; }
 
-.design-inspector { display: flex; flex-direction: column; gap: 16px; }
+.design-inspector { display: flex; flex-direction: column; gap: 16px; grid-area: inspector; }
 .design-area { display: flex; flex-direction: column; gap: 10px; }
 .design-area-count { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); display: flex; align-items: center; gap: 8px; }
 .design-area-size { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
