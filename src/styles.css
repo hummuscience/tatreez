@@ -399,8 +399,16 @@ body {
 .design-lib-card canvas { width: 100%; height: auto; display: block; }
 .design-lib-card-name { font-size: 10px; color: var(--ink-soft); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.design-canvas { width: 100%; height: auto; display: block; border: 1px solid var(--rule-strong); border-radius: 4px; background: var(--surface); cursor: crosshair; }
-.design-canvas-hint { font-family: var(--font-mono); font-size: 10px; color: var(--ink-soft); text-align: center; }
+/* The canvas backing px = wrapW × zoom, so it renders 1:1 (no CSS scaling):
+   at 100% it fills the column; zoomed in it overflows and the inner scroll
+   container scrolls. The foot (zoom + hint) stays fixed below it. */
+.design-canvas-scroll { overflow: auto; max-height: 76vh; }
+.design-canvas { display: block; border: 1px solid var(--rule-strong); border-radius: 4px; background: var(--surface); cursor: crosshair; }
+.design-canvas-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.design-zoom { display: flex; align-items: center; gap: 6px; }
+.design-zoom .chip { padding: 2px 9px; min-width: 26px; }
+.design-zoom-val { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); min-width: 38px; text-align: center; }
+.design-canvas-hint { font-family: var(--font-mono); font-size: 10px; color: var(--ink-soft); text-align: right; flex: 1 1 240px; }
 
 .design-inspector { display: flex; flex-direction: column; gap: 16px; grid-area: inspector; }
 .design-area { display: flex; flex-direction: column; gap: 10px; }

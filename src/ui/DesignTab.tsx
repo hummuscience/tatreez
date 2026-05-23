@@ -62,9 +62,6 @@ interface Props {
   showToast: (msg: string) => void;
 }
 
-/** Max canvas backing height; width fills the residual column. */
-const CANVAS_MAX_H = 560;
-
 /** A library entry the browser can show and drag. */
 interface LibEntry {
   key: string;
@@ -268,6 +265,7 @@ function DesignComposer({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [wrapW, setWrapW] = useState(640);
+  const [zoom, setZoom] = useState(1);
   const [activeAreaId, setActiveAreaId] = useState<string | null>(
     design.areas[0]?.id ?? null,
   );
@@ -280,6 +278,10 @@ function DesignComposer({
 
   const library = useMemo(() => buildLibrary(), []);
   const activeArea = design.areas.find((a) => a.id === activeAreaId) ?? null;
+  // An "empty" area (no motif, no repeat) is a marked filter target — drawn to
+  // size the tray to it. Selecting one auto-filters the library to fit.
+  const activeIsEmpty = !!activeArea && activeArea.motifs.length === 0 && !activeArea.repeat;
+  const fitsActive = (fitOnly || activeIsEmpty) && activeArea !== null;
 
   // Region chips from the loaded library (same source as the Library tab).
   const regions = useMemo(() => {
@@ -291,12 +293,14 @@ function DesignComposer({
     return [...counts.entries()].sort((a, b) => b[1] - a[1]);
   }, [library]);
 
-  // Pointer interaction: either moving an area or rotating one. Move tracks
-  // the grab offset so the motif doesn't jump to the cursor's corner; rotate
-  // tracks a live preview angle that snaps to 90° on release.
+  // Pointer interaction: moving/rotating an existing area, or drawing a new
+  // empty "marked" area on blank canvas (a filter target). Move tracks the
+  // grab offset; rotate tracks a live preview angle that snaps to 90°;
+  // marquee tracks the rectangle being dragged out (start + current cell).
   type Interaction =
     | { kind: 'move'; areaId: string; offX: number; offY: number }
-    | { kind: 'rotate'; areaId: string; cx: number; cy: number; angle: number };
+    | { kind: 'rotate'; areaId: string; cx: number; cy: number; angle: number }
+    | { kind: 'marquee'; x0: number; y0: number; x1: number; y1: number };
   const interactionRef = useRef<Interaction | null>(null);
 
   // Canvas fills the residual column width; height follows the cloth aspect
@@ -312,11 +316,27 @@ function DesignComposer({
     return () => ro.disconnect();
   }, []);
 
+  // Shift + wheel zooms the canvas. Attached non-passively so we can prevent
+  // the page from scrolling while zooming.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.shiftKey) return;
+      e.preventDefault();
+      const step = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+      setZoom((z) => Math.max(0.5, Math.min(4, z * step)));
+    };
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', onWheel);
+  }, []);
+
   // Reserve GUTTER px on the top + left for row/column number labels; the
   // grid is drawn translated by GUTTER so all `x*cs` drawing stays unchanged.
+  // The canvas fills the full available width at zoom 1; Shift+wheel zooms.
   const aspect = design.gridH / design.gridW;
-  const canvasW = wrapW;
-  const canvasH = Math.min(CANVAS_MAX_H, Math.round(canvasW * aspect)) + GUTTER;
+  const canvasW = Math.round(wrapW * zoom);
+  const canvasH = Math.round((canvasW - GUTTER) * aspect) + GUTTER;
   const cs = cellSize(canvasW - GUTTER, canvasH - GUTTER, design.gridW, design.gridH);
 
   // Pixel length of the rotate handle's stem above an area.
@@ -395,6 +415,22 @@ function DesignComposer({
         ctx.fill();
         ctx.restore();
       }
+    }
+
+    // Marquee preview while drawing a new area.
+    if (interaction?.kind === 'marquee') {
+      const mx = Math.min(interaction.x0, interaction.x1);
+      const my = Math.min(interaction.y0, interaction.y1);
+      const mw = Math.abs(interaction.x1 - interaction.x0) + 1;
+      const mh = Math.abs(interaction.y1 - interaction.y0) + 1;
+      ctx.save();
+      ctx.strokeStyle = '#b5654a';
+      ctx.fillStyle = 'rgba(181,101,74,0.10)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 3]);
+      ctx.fillRect(mx * cs, my * cs, mw * cs, mh * cs);
+      ctx.strokeRect(mx * cs + 0.5, my * cs + 0.5, mw * cs, mh * cs);
+      ctx.restore();
     }
   };
 
@@ -497,7 +533,9 @@ function DesignComposer({
       setActiveAreaId(hit.id);
       interactionRef.current = { kind: 'move', areaId: hit.id, offX: cx - hit.x, offY: cy - hit.y };
     } else {
+      // Empty canvas: start drawing a marked area to filter against.
       setActiveAreaId(null);
+      interactionRef.current = { kind: 'marquee', x0: cx, y0: cy, x1: cx, y1: cy };
     }
   };
 
@@ -511,6 +549,10 @@ function DesignComposer({
       const nx = Math.max(0, Math.min(cx - it.offX, design.gridW - area.w));
       const ny = Math.max(0, Math.min(cy - it.offY, design.gridH - area.h));
       if (nx !== area.x || ny !== area.y) updateArea(area.id, (a) => ({ ...a, x: nx, y: ny }));
+    } else if (it.kind === 'marquee') {
+      const [cx, cy] = cellAt(e.clientX, e.clientY);
+      interactionRef.current = { ...it, x1: cx, y1: cy };
+      draw();
     } else {
       // rotate: angle from area centre to pointer; Alt snaps to 90° live.
       const [px, py] = pointerPx(e.clientX, e.clientY);
@@ -536,6 +578,26 @@ function DesignComposer({
       } else {
         draw(); // clear the preview transform
       }
+    } else if (it.kind === 'marquee') {
+      const x = Math.min(it.x0, it.x1);
+      const y = Math.min(it.y0, it.y1);
+      const w = Math.abs(it.x1 - it.x0) + 1;
+      const h = Math.abs(it.y1 - it.y0) + 1;
+      if (w < 2 && h < 2) {
+        draw(); // a click, not a drag — clear preview
+        return;
+      }
+      const area: Area = {
+        id: newId('area'),
+        name: `area ${design.areas.length + 1}`,
+        x,
+        y,
+        w,
+        h,
+        motifs: [],
+      };
+      onChange({ ...design, areas: [...design.areas, area] });
+      setActiveAreaId(area.id);
     }
   };
 
@@ -564,12 +626,36 @@ function DesignComposer({
       return;
     }
 
-    // Otherwise create a new tight area hugging the motif, positioned at the
-    // drop point and clamped on-grid. Size = trimmed motif dimensions.
     const mh = cells.length;
     const mw = mh > 0 ? cells[0].length : 1;
     const w = Math.min(mw, design.gridW);
     const h = Math.min(mh, design.gridH);
+
+    // Dropping into an empty marked area tightens it to the motif (the marked
+    // size was only a filter target). Anchor at the area's top-left.
+    if (existing && existing.motifs.length === 0 && !existing.repeat) {
+      const ax = Math.max(0, Math.min(existing.x, design.gridW - w));
+      const ay = Math.max(0, Math.min(existing.y, design.gridH - h));
+      const target: Area = {
+        ...existing,
+        name: existing.name || entry.pattern.name || 'motif',
+        x: ax,
+        y: ay,
+        w,
+        h,
+        motifs: [{ patternKey: key, cells, x: 0, y: 0 }],
+      };
+      onChange({
+        ...design,
+        palette: merged.palette,
+        areas: design.areas.map((a) => (a.id === target.id ? target : a)),
+      });
+      setActiveAreaId(target.id);
+      return;
+    }
+
+    // Otherwise create a new tight area hugging the motif, positioned at the
+    // drop point and clamped on-grid. Size = trimmed motif dimensions.
     const ax = Math.max(0, Math.min(cx, design.gridW - w));
     const ay = Math.max(0, Math.min(cy, design.gridH - h));
     const area: Area = {
@@ -595,7 +681,7 @@ function DesignComposer({
     }
     if (fSize && sizeBucket(p) !== fSize) return false;
     if (fComplexity && complexityBucket(paintedCells(p)) !== fComplexity) return false;
-    if (fitOnly && activeArea) {
+    if (fitsActive && activeArea) {
       if (p.width > activeArea.w || p.height > activeArea.h) return false;
     }
     return true;
@@ -707,14 +793,14 @@ function DesignComposer({
           ))}
         </select>
 
-        <label className="design-fit-toggle">
+        <label className="design-fit-toggle" title={activeIsEmpty ? 'On automatically for a marked area' : ''}>
           <input
             type="checkbox"
-            checked={fitOnly}
-            disabled={!activeArea}
+            checked={fitsActive}
+            disabled={!activeArea || activeIsEmpty}
             onChange={(e) => setFitOnly(e.target.checked)}
           />
-          Fits area
+          Fits area{activeArea ? ` (≤ ${activeArea.w}×${activeArea.h})` : ''}
         </label>
 
         <span className="design-filter-count">
@@ -742,27 +828,43 @@ function DesignComposer({
         </aside>
 
         <div className="design-canvas-wrap" ref={wrapRef}>
-          <canvas
-            ref={canvasRef}
-            width={canvasW}
-            height={canvasH}
-            className="design-canvas"
-            onMouseDown={onMouseDown}
-            onMouseMove={onMouseMove}
-            onMouseUp={onMouseUp}
-            onMouseLeave={() => {
-              if (interactionRef.current) onMouseUp();
-            }}
-            onDragOver={(e) => {
-              e.preventDefault();
-              e.dataTransfer.dropEffect = 'copy';
-            }}
-            onDrop={onDrop}
-          />
-          <p className="design-canvas-hint">
-            Drag a pattern onto the canvas · drag a placed motif to move it · use the handle above it
-            to rotate (hold Alt to snap to 90°)
-          </p>
+          <div className="design-canvas-scroll">
+            <canvas
+              ref={canvasRef}
+              width={canvasW}
+              height={canvasH}
+              className="design-canvas"
+              onMouseDown={onMouseDown}
+              onMouseMove={onMouseMove}
+              onMouseUp={onMouseUp}
+              onMouseLeave={() => {
+                if (interactionRef.current) onMouseUp();
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'copy';
+              }}
+              onDrop={onDrop}
+            />
+          </div>
+          <div className="design-canvas-foot">
+            <div className="design-zoom">
+              <button type="button" className="chip" onClick={() => setZoom((z) => Math.max(0.5, z / 1.2))} title="Zoom out">
+                −
+              </button>
+              <span className="design-zoom-val">{Math.round(zoom * 100)}%</span>
+              <button type="button" className="chip" onClick={() => setZoom((z) => Math.min(4, z * 1.2))} title="Zoom in">
+                +
+              </button>
+              <button type="button" className="chip" onClick={() => setZoom(1)} title="Fit width">
+                Fit
+              </button>
+            </div>
+            <p className="design-canvas-hint">
+              Drag on empty canvas to mark an area · drag a pattern on · drag a motif to move · handle
+              rotates (Alt = snap 90°) · Shift + scroll to zoom
+            </p>
+          </div>
         </div>
 
         <aside className="design-inspector">
