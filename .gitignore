@@ -37,3 +37,5 @@ coverage/
 
 # Hand-off scratch space from earlier sessions
 handoff/
+
+.superpowers/
