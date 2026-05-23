@@ -31,6 +31,19 @@ import {
 } from '../storage/storage';
 import PatternThumb from './PatternThumb';
 import { cellSize, clearCanvas, drawGridLines, drawPatternBackground } from './canvasUtil';
+import {
+  COLOR_BUCKETS,
+  COMPLEXITY_FILTERS,
+  SIZE_FILTERS,
+  colorCount,
+  complexityBucket,
+  matchesQuery,
+  paintedCells,
+  sizeBucket,
+  type ColorBucket,
+  type ComplexityBucket,
+  type SizeBucket,
+} from './patternFilters';
 
 interface Props {
   /** Route a composited area to the Plan tab. */
@@ -38,8 +51,8 @@ interface Props {
   showToast: (msg: string) => void;
 }
 
-const CANVAS_W = 560;
-const CANVAS_H = 440;
+/** Max canvas backing height; width fills the residual column. */
+const CANVAS_MAX_H = 560;
 
 /** A library entry the browser can show and drag. */
 interface LibEntry {
@@ -59,16 +72,6 @@ function buildLibrary(): LibEntry[] {
     out.push({ key: `tirazain:${slug}`, pattern: p });
   }
   return out;
-}
-
-function matches(p: Pattern, q: string): boolean {
-  if (!q) return true;
-  const ql = q.toLowerCase();
-  if (p.name.toLowerCase().includes(ql)) return true;
-  if ((p.nameAr ?? '').includes(q)) return true;
-  if (p.source?.region?.toLowerCase().includes(ql)) return true;
-  if ((p.source?.arabicName ?? '').includes(q)) return true;
-  return false;
 }
 
 export default function DesignTab({ onPlanArea, showToast }: Props) {
@@ -255,14 +258,30 @@ function DesignComposer({
   showToast: (msg: string) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [wrapW, setWrapW] = useState(640);
   const [activeAreaId, setActiveAreaId] = useState<string | null>(
     design.areas[0]?.id ?? null,
   );
   const [query, setQuery] = useState('');
   const [fitOnly, setFitOnly] = useState(false);
+  const [fRegion, setFRegion] = useState<string | null>(null);
+  const [fColors, setFColors] = useState<ColorBucket | null>(null);
+  const [fSize, setFSize] = useState<SizeBucket | null>(null);
+  const [fComplexity, setFComplexity] = useState<ComplexityBucket | null>(null);
 
   const library = useMemo(() => buildLibrary(), []);
   const activeArea = design.areas.find((a) => a.id === activeAreaId) ?? null;
+
+  // Region chips from the loaded library (same source as the Library tab).
+  const regions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const l of library) {
+      const r = l.pattern.source?.region;
+      if (r) counts.set(r, (counts.get(r) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  }, [library]);
 
   // Drag-select state for making a new area (in cells).
   const dragRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
@@ -270,7 +289,23 @@ function DesignComposer({
     null,
   );
 
-  const cs = cellSize(CANVAS_W, CANVAS_H, design.gridW, design.gridH);
+  // Canvas fills the residual column width; height follows the cloth aspect
+  // ratio, capped so very tall designs don't blow out the layout.
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w && w > 0) setWrapW(Math.floor(w));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const aspect = design.gridH / design.gridW;
+  const canvasW = wrapW;
+  const canvasH = Math.min(CANVAS_MAX_H, Math.round(canvasW * aspect));
+  const cs = cellSize(canvasW, canvasH, design.gridW, design.gridH);
 
   // ----- rendering -----
   useEffect(() => {
@@ -454,189 +489,304 @@ function DesignComposer({
   };
 
   const filteredLib = library.filter((l) => {
-    if (!matches(l.pattern, query)) return false;
+    const p = l.pattern;
+    if (!matchesQuery(p, query)) return false;
+    if (fRegion && p.source?.region !== fRegion) return false;
+    if (fColors !== null) {
+      const c = colorCount(p);
+      if (fColors === 5 ? c < 5 : c !== fColors) return false;
+    }
+    if (fSize && sizeBucket(p) !== fSize) return false;
+    if (fComplexity && complexityBucket(paintedCells(p)) !== fComplexity) return false;
     if (fitOnly && activeArea) {
-      if (l.pattern.width > activeArea.w || l.pattern.height > activeArea.h) return false;
+      if (p.width > activeArea.w || p.height > activeArea.h) return false;
     }
     return true;
   });
 
+  const anyFilter =
+    query.length > 0 ||
+    fRegion !== null ||
+    fColors !== null ||
+    fSize !== null ||
+    fComplexity !== null ||
+    fitOnly;
+
+  const clearFilters = () => {
+    setQuery('');
+    setFRegion(null);
+    setFColors(null);
+    setFSize(null);
+    setFComplexity(null);
+    setFitOnly(false);
+  };
+
   return (
     <div className="design-composer">
-      {/* Left: library browser */}
-      <aside className="design-lib">
-        <div className="design-lib-head">
-          <button className="btn-ghost btn-sm" type="button" onClick={onClose}>
-            ← Designs
-          </button>
-          <strong>{design.name}</strong>
-        </div>
-        <input
-          type="search"
-          className="design-lib-search"
-          placeholder="Search patterns…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <label className="design-fit-toggle">
-          <input
-            type="checkbox"
-            checked={fitOnly}
-            disabled={!activeArea}
-            onChange={(e) => setFitOnly(e.target.checked)}
+      {/* Top: cloth + size + strands — the first choice, full width */}
+      <ClothBar design={design} onChange={onChange} onClose={onClose} />
+
+      <div className="design-body">
+        {/* Left: library browser with full filters */}
+        <aside className="design-lib">
+          <div className="design-lib-head">
+            <span className="design-lib-title">Patterns</span>
+            <span className="design-lib-title-ar" dir="rtl">
+              الأنماط
+            </span>
+            {anyFilter && (
+              <button className="btn-ghost btn-sm" type="button" onClick={clearFilters}>
+                Clear
+              </button>
+            )}
+          </div>
+
+          <label className="filter-search">
+            <SearchIcon />
+            <input
+              type="search"
+              placeholder="Search by name, region, Arabic name…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              aria-label="Search patterns"
+            />
+          </label>
+
+          <div className="filters">
+            <label className="design-fit-toggle">
+              <input
+                type="checkbox"
+                checked={fitOnly}
+                disabled={!activeArea}
+                onChange={(e) => setFitOnly(e.target.checked)}
+              />
+              Fits active area{activeArea ? ` (≤ ${activeArea.w}×${activeArea.h})` : ''}
+            </label>
+
+            {regions.length > 0 && (
+              <FilterRow label="Region" labelAr="المنطقة">
+                {regions.map(([region, count]) => (
+                  <Chip
+                    key={region}
+                    active={fRegion === region}
+                    onClick={() => setFRegion(fRegion === region ? null : region)}
+                  >
+                    {region} <span className="chip-count">{count}</span>
+                  </Chip>
+                ))}
+              </FilterRow>
+            )}
+
+            <FilterRow label="Colors" labelAr="الألوان">
+              {COLOR_BUCKETS.map((n) => (
+                <Chip key={n} active={fColors === n} onClick={() => setFColors(fColors === n ? null : n)}>
+                  {n === 5 ? '5+' : n}
+                </Chip>
+              ))}
+            </FilterRow>
+
+            <FilterRow label="Size" labelAr="الحجم">
+              {SIZE_FILTERS.map(([bucket, label]) => (
+                <Chip key={bucket} active={fSize === bucket} onClick={() => setFSize(fSize === bucket ? null : bucket)}>
+                  {label}
+                </Chip>
+              ))}
+            </FilterRow>
+
+            <FilterRow label="Complexity" labelAr="التعقيد">
+              {COMPLEXITY_FILTERS.map(([bucket, label]) => (
+                <Chip
+                  key={bucket}
+                  active={fComplexity === bucket}
+                  onClick={() => setFComplexity(fComplexity === bucket ? null : bucket)}
+                >
+                  {label}
+                </Chip>
+              ))}
+            </FilterRow>
+          </div>
+
+          <div className="design-lib-grid">
+            {filteredLib.length === 0 ? (
+              <p className="empty-hint">No patterns match.</p>
+            ) : (
+              filteredLib.slice(0, 120).map((l) => (
+                <div
+                  key={l.key}
+                  className="design-lib-card"
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('text/plain', l.key);
+                    e.dataTransfer.effectAllowed = 'copy';
+                  }}
+                  title={`${l.pattern.name} · ${l.pattern.width}×${l.pattern.height}`}
+                >
+                  <PatternThumb pattern={l.pattern} width={104} height={82} />
+                  <div className="design-lib-card-name">{l.pattern.name}</div>
+                </div>
+              ))
+            )}
+          </div>
+        </aside>
+
+        {/* Center: canvas fills residual width */}
+        <div className="design-canvas-wrap" ref={wrapRef}>
+          <canvas
+            ref={canvasRef}
+            width={canvasW}
+            height={canvasH}
+            className="design-canvas"
+            onMouseDown={onMouseDown}
+            onMouseMove={onMouseMove}
+            onMouseUp={onMouseUp}
+            onMouseLeave={() => {
+              if (dragRef.current) onMouseUp();
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'copy';
+            }}
+            onDrop={onDrop}
           />
-          Fits active area{activeArea ? ` (≤ ${activeArea.w}×${activeArea.h})` : ''}
-        </label>
-        <div className="design-lib-grid">
-          {filteredLib.slice(0, 120).map((l) => (
-            <div
-              key={l.key}
-              className="design-lib-card"
-              draggable
-              onDragStart={(e) => {
-                e.dataTransfer.setData('text/plain', l.key);
-                e.dataTransfer.effectAllowed = 'copy';
-              }}
-              title={`${l.pattern.name} · ${l.pattern.width}×${l.pattern.height}`}
-            >
-              <PatternThumb pattern={l.pattern} width={88} height={70} />
-              <div className="design-lib-card-name">{l.pattern.name}</div>
-            </div>
-          ))}
+          <p className="design-canvas-hint">
+            Drag-select an empty region to make an area · drag a pattern from the left onto the
+            canvas
+          </p>
         </div>
-      </aside>
 
-      {/* Center: canvas */}
-      <div className="design-canvas-wrap">
-        <canvas
-          ref={canvasRef}
-          width={CANVAS_W}
-          height={CANVAS_H}
-          className="design-canvas"
-          onMouseDown={onMouseDown}
-          onMouseMove={onMouseMove}
-          onMouseUp={onMouseUp}
-          onMouseLeave={() => {
-            if (dragRef.current) onMouseUp();
-          }}
-          onDragOver={(e) => {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'copy';
-          }}
-          onDrop={onDrop}
-        />
-        <p className="design-canvas-hint">
-          Drag-select an empty region to make an area · drag a pattern from the left onto the
-          canvas
-        </p>
+        {/* Right: area inspector */}
+        <aside className="design-inspector">
+          <AreaInspector
+            area={activeArea}
+            updateArea={updateArea}
+            onDeleteArea={(id) => {
+              onChange({ ...design, areas: design.areas.filter((a) => a.id !== id) });
+              setActiveAreaId(null);
+            }}
+            onPlanArea={(area) => {
+              const sub = compositeArea(area, design.palette);
+              onPlanArea(sub, `design:${design.id}:${area.id}`);
+            }}
+          />
+        </aside>
       </div>
-
-      {/* Right: inspector */}
-      <aside className="design-inspector">
-        <Inspector
-          design={design}
-          area={activeArea}
-          onChange={onChange}
-          updateArea={updateArea}
-          onDeleteArea={(id) => {
-            onChange({ ...design, areas: design.areas.filter((a) => a.id !== id) });
-            setActiveAreaId(null);
-          }}
-          onPlanArea={(area) => {
-            const sub = compositeArea(area, design.palette);
-            onPlanArea(sub, `design:${design.id}:${area.id}`);
-          }}
-        />
-      </aside>
     </div>
   );
 }
 
-// ---------- Inspector ----------
+// ---------- Cloth bar (top, full width) ----------
 
-function Inspector({
+function ClothBar({
   design,
-  area,
   onChange,
+  onClose,
+}: {
+  design: Design;
+  onChange: (d: Design) => void;
+  onClose: () => void;
+}) {
+  const cloth = getCloth(design.clothId);
+  return (
+    <section className="design-clothbar">
+      <button className="btn-ghost btn-sm" type="button" onClick={onClose}>
+        ← Designs
+      </button>
+      <strong className="design-clothbar-name">{design.name}</strong>
+      <label className="field field-inline">
+        <span>Cloth</span>
+        <select
+          value={design.clothId}
+          onChange={(e) => {
+            const c = getCloth(e.target.value);
+            onChange({
+              ...design,
+              clothId: e.target.value,
+              gridW: cmToCells(design.widthCm, c),
+              gridH: cmToCells(design.heightCm, c),
+            });
+          }}
+        >
+          {CLOTH_OPTIONS.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="field field-inline">
+        <span>Width (cm)</span>
+        <input
+          type="number"
+          min={1}
+          value={design.widthCm}
+          onChange={(e) => {
+            const widthCm = Math.max(1, Number(e.target.value) || 1);
+            onChange({ ...design, widthCm, gridW: cmToCells(widthCm, cloth) });
+          }}
+        />
+      </label>
+      <label className="field field-inline">
+        <span>Height (cm)</span>
+        <input
+          type="number"
+          min={1}
+          value={design.heightCm}
+          onChange={(e) => {
+            const heightCm = Math.max(1, Number(e.target.value) || 1);
+            onChange({ ...design, heightCm, gridH: cmToCells(heightCm, cloth) });
+          }}
+        />
+      </label>
+      <label className="field field-inline">
+        <span>Strands</span>
+        <select
+          value={design.strandsId}
+          onChange={(e) => onChange({ ...design, strandsId: e.target.value })}
+        >
+          {STRAND_OPTIONS.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <span className="design-clothbar-meta">
+        {design.gridW}×{design.gridH} stitches
+      </span>
+    </section>
+  );
+}
+
+// ---------- Area inspector ----------
+
+function AreaInspector({
+  area,
   updateArea,
   onDeleteArea,
   onPlanArea,
 }: {
-  design: Design;
   area: Area | null;
-  onChange: (d: Design) => void;
   updateArea: (id: string, fn: (a: Area) => Area) => void;
   onDeleteArea: (id: string) => void;
   onPlanArea: (a: Area) => void;
 }) {
-  const cloth = getCloth(design.clothId);
-
   return (
-    <>
-      <section className="panel">
-        <div className="panel-h">
-          <span>Design</span>
-          <span dir="rtl">التصميم</span>
-        </div>
-        <div className="design-setup">
-          <label className="field">
-            <span>Cloth</span>
-            <select
-              value={design.clothId}
-              onChange={(e) => {
-                const c = getCloth(e.target.value);
-                onChange({
-                  ...design,
-                  clothId: e.target.value,
-                  gridW: cmToCells(design.widthCm, c),
-                  gridH: cmToCells(design.heightCm, c),
-                });
-              }}
-            >
-              {CLOTH_OPTIONS.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Strands</span>
-            <select
-              value={design.strandsId}
-              onChange={(e) => onChange({ ...design, strandsId: e.target.value })}
-            >
-              {STRAND_OPTIONS.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="design-setup-meta">
-            {design.widthCm}×{design.heightCm} cm · {design.gridW}×{design.gridH} stitches on{' '}
-            {cloth.label}
-          </div>
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="panel-h">
-          <span>Area</span>
-          <span dir="rtl">المنطقة</span>
-        </div>
-        {!area ? (
-          <p className="empty-hint">Select or drag-select an area on the canvas.</p>
-        ) : (
-          <AreaPanel
-            area={area}
-            updateArea={updateArea}
-            onDeleteArea={onDeleteArea}
-            onPlanArea={onPlanArea}
-          />
-        )}
-      </section>
-    </>
+    <section className="panel">
+      <div className="panel-h">
+        <span>Area</span>
+        <span dir="rtl">المنطقة</span>
+      </div>
+      {!area ? (
+        <p className="empty-hint">Select or drag-select an area on the canvas.</p>
+      ) : (
+        <AreaPanel
+          area={area}
+          updateArea={updateArea}
+          onDeleteArea={onDeleteArea}
+          onPlanArea={onPlanArea}
+        />
+      )}
+    </section>
   );
 }
 
@@ -779,5 +929,66 @@ function AreaPanel({
         </button>
       </div>
     </div>
+  );
+}
+
+// ---------- Filter UI helpers (mirror the Library tab) ----------
+
+function FilterRow({
+  label,
+  labelAr,
+  children,
+}: {
+  label: string;
+  labelAr?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="filter-row">
+      <div className="filter-label">
+        <span>{label}</span>
+        {labelAr && (
+          <span className="filter-label-ar" dir="rtl">
+            {labelAr}
+          </span>
+        )}
+      </div>
+      <div className="filter-chips">{children}</div>
+    </div>
+  );
+}
+
+function Chip({
+  children,
+  active,
+  onClick,
+}: {
+  children: React.ReactNode;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className={`chip${active ? ' chip-active' : ''}`} onClick={onClick}>
+      {children}
+    </button>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="11" cy="11" r="7" />
+      <path d="m21 21-4.3-4.3" />
+    </svg>
   );
 }
