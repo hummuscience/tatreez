@@ -1035,6 +1035,12 @@ function DesignComposer({
               rotates (Alt = snap 90°) · Shift + scroll to zoom
             </p>
           </div>
+          {/* Bottom strip: continues the L directly under the canvas */}
+          <div className="design-motif-strip">
+            {bottomMotifs.map((l) => (
+              <MotifCard key={l.key} entry={l} />
+            ))}
+          </div>
         </div>
 
         <aside className="design-inspector">
@@ -1070,12 +1076,6 @@ function DesignComposer({
           />
         </aside>
 
-        {/* Bottom strip: continues the L under the left column + canvas */}
-        <div className="design-motif-strip">
-          {bottomMotifs.map((l) => (
-            <MotifCard key={l.key} entry={l} />
-          ))}
-        </div>
       </div>
     </div>
   );
