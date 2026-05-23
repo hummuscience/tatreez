@@ -374,27 +374,31 @@ body {
 
 /* L-shape body: left motif column + canvas + inspector, then a bottom strip
    that continues the L under the left column and canvas. */
-/* Three columns: left motif arm · canvas (with its own bottom strip) ·
-   inspector. The bottom strip lives inside .design-canvas-wrap so it always
-   sits directly under the canvas, regardless of the left column's length. */
+/* Motifs pack the space around the canvas: a left column and a right column
+   (below the inspector), both ending at the canvas bottom, then full-width
+   rows beneath the whole band. The band is three columns; the bottom strip is
+   a sibling that spans the full width. */
 .design-body-l {
   display: grid;
   grid-template-columns: 124px minmax(0, 1fr) 280px;
   gap: 14px;
   align-items: start;
 }
-/* Left arm of the L. Clipped to the canvas-wrap's height so a long result
-   list never overflows past the canvas; the remainder lives in the strip. */
+/* Left arm. Clipped to the canvas height (inline max-height) so a long result
+   list never overflows past the canvas; the remainder fills the other arms. */
 .design-motif-col {
   display: flex;
   flex-direction: column;
   gap: 8px;
   overflow: hidden;
-  max-height: 100%;
 }
 .design-motif-col .design-lib-card { width: 104px; flex: 0 0 auto; }
+/* Right arm: sits below the inspector, fills remaining space to canvas bottom. */
+.design-inspector { display: flex; flex-direction: column; gap: 16px; }
+.design-motif-col-right { margin-top: 0; }
 .design-canvas-wrap { display: flex; flex-direction: column; gap: 8px; align-items: stretch; min-width: 0; }
-.design-motif-strip { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Bottom rows: full-width dense wrap, filling each row left→right. */
+.design-motif-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .design-motif-strip .design-lib-card { width: 104px; }
 
 .design-lib-card { border: 1px solid var(--rule); border-radius: var(--input-radius); padding: 4px; background: var(--surface-deep); cursor: grab; text-align: center; }
@@ -414,7 +418,6 @@ body {
 .design-zoom-val { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); min-width: 38px; text-align: center; }
 .design-canvas-hint { font-family: var(--font-mono); font-size: 10px; color: var(--ink-soft); text-align: right; flex: 1 1 240px; }
 
-.design-inspector { display: flex; flex-direction: column; gap: 16px; }
 .design-area { display: flex; flex-direction: column; gap: 10px; }
 .design-area-count { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); display: flex; align-items: center; gap: 8px; }
 .design-area-size { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }

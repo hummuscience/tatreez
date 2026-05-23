@@ -877,15 +877,31 @@ function DesignComposer({
   // Split the capped results between the L's two arms: a left column and a
   // bottom strip. Caps keep the L full without per-strip scroll fights —
   // narrow the dropdowns to reach motifs beyond the cap.
-  // Left column shows as many cards as fit beside the canvas (≈106px each);
-  // the rest spill into the bottom strip. Caps keep the L full without a
-  // cramped scroll box — narrow the dropdowns to reach motifs beyond them.
+  // Pack motifs into the space around the canvas, filling each region before
+  // the next: (1) the left column top→bottom to the canvas bottom, (2) the
+  // right column below the inspector to the canvas bottom, (3) full-width rows
+  // beneath the whole band. Counts derive from how many ~106px cards fit each
+  // region's height; overflow is reached by narrowing the filters.
   const CARD_PX = 106;
-  const LEFT_CAP = Math.max(3, Math.floor((canvasH - GUTTER) / CARD_PX));
-  const BOTTOM_CAP = 12;
-  const leftMotifs = filteredLib.slice(0, LEFT_CAP);
-  const bottomMotifs = filteredLib.slice(LEFT_CAP, LEFT_CAP + BOTTOM_CAP);
-  const totalShown = Math.min(filteredLib.length, LEFT_CAP + BOTTOM_CAP);
+  const canvasPx = canvasH - GUTTER;
+  const leftCount = Math.max(3, Math.floor(canvasPx / CARD_PX));
+  // Right column starts below the inspector, so it has less height than the
+  // canvas; estimate the inspector at ~300px.
+  const rightCount = Math.max(0, Math.floor((canvasPx - 300) / CARD_PX));
+  // Bottom rows: a few full-width rows of cards (the grid wraps to fill).
+  const BOTTOM_ROWS = 3;
+  const bottomCount = BOTTOM_ROWS * 10;
+
+  const leftMotifs = filteredLib.slice(0, leftCount);
+  const rightMotifs = filteredLib.slice(leftCount, leftCount + rightCount);
+  const bottomMotifs = filteredLib.slice(
+    leftCount + rightCount,
+    leftCount + rightCount + bottomCount,
+  );
+  const totalShown = Math.min(
+    filteredLib.length,
+    leftCount + rightCount + bottomCount,
+  );
 
   return (
     <div className="design-composer">
@@ -1035,12 +1051,6 @@ function DesignComposer({
               rotates (Alt = snap 90°) · Shift + scroll to zoom
             </p>
           </div>
-          {/* Bottom strip: continues the L directly under the canvas */}
-          <div className="design-motif-strip">
-            {bottomMotifs.map((l) => (
-              <MotifCard key={l.key} entry={l} />
-            ))}
-          </div>
         </div>
 
         <aside className="design-inspector">
@@ -1074,9 +1084,29 @@ function DesignComposer({
               onPlanArea(sub, `design:${design.id}:${area.id}`);
             }}
           />
+          {/* Right arm: motifs fill the space below the inspector to the
+              canvas bottom (clipped so they don't overrun it). */}
+          {rightMotifs.length > 0 && (
+            <div
+              className="design-motif-col design-motif-col-right"
+              style={{ maxHeight: Math.max(0, canvasH - 300) }}
+            >
+              {rightMotifs.map((l) => (
+                <MotifCard key={l.key} entry={l} />
+              ))}
+            </div>
+          )}
         </aside>
-
       </div>
+
+      {/* Bottom: full-width rows beneath the whole band, filled left→right. */}
+      {bottomMotifs.length > 0 && (
+        <div className="design-motif-strip">
+          {bottomMotifs.map((l) => (
+            <MotifCard key={l.key} entry={l} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
