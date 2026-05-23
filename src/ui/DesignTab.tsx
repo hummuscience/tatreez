@@ -269,6 +269,8 @@ function DesignComposer({
   const [activeAreaId, setActiveAreaId] = useState<string | null>(
     design.areas[0]?.id ?? null,
   );
+  // Copy/paste clipboard for duplicating an area (cells, size, repeat).
+  const clipboardRef = useRef<Area | null>(null);
   const [query, setQuery] = useState('');
   const [fitOnly, setFitOnly] = useState(false);
   const [fRegion, setFRegion] = useState<string | null>(null);
@@ -513,6 +515,49 @@ function DesignComposer({
       repeat: area.repeat ? { ...area.repeat, cells: f(area.repeat.cells) } : undefined,
     };
   };
+
+  // Duplicate an area (new id, offset by a few cells, clamped on-grid) and
+  // select the copy. Used by both the keyboard paste and the inspector button.
+  const duplicateArea = (src: Area): Area => {
+    const off = 2;
+    const nx = Math.max(0, Math.min(src.x + off, design.gridW - src.w));
+    const ny = Math.max(0, Math.min(src.y + off, design.gridH - src.h));
+    const copy: Area = {
+      ...src,
+      id: newId('area'),
+      x: nx,
+      y: ny,
+      motifs: src.motifs.map((m) => ({ ...m, cells: m.cells.map((r) => r.slice()) })),
+      repeat: src.repeat ? { ...src.repeat, cells: src.repeat.cells.map((r) => r.slice()) } : undefined,
+    };
+    onChange({ ...design, areas: [...design.areas, copy] });
+    setActiveAreaId(copy.id);
+    return copy;
+  };
+
+  // Copy/paste: Cmd/Ctrl+C copies the active area, Cmd/Ctrl+V pastes a copy.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // Ignore when typing in an input/select/textarea.
+      const t = e.target as HTMLElement | null;
+      if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key === 'c' && activeArea) {
+        clipboardRef.current = activeArea;
+        e.preventDefault();
+      } else if (mod && e.key === 'v' && clipboardRef.current) {
+        duplicateArea(clipboardRef.current);
+        e.preventDefault();
+      } else if (mod && e.key === 'd' && activeArea) {
+        // Cmd/Ctrl+D: duplicate directly without a separate copy.
+        duplicateArea(activeArea);
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeArea, design]);
 
   // ----- pointer: select / move / rotate -----
   const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -873,6 +918,7 @@ function DesignComposer({
             updateArea={updateArea}
             onRotate={(a) => updateArea(a.id, (cur) => rotateArea(cur, 1))}
             onFlip={(a, axis) => updateArea(a.id, (cur) => flipArea(cur, axis))}
+            onDuplicate={duplicateArea}
             onDeleteArea={(id) => {
               onChange({ ...design, areas: design.areas.filter((a) => a.id !== id) });
               setActiveAreaId(null);
@@ -1003,6 +1049,7 @@ function AreaInspector({
   updateArea,
   onRotate,
   onFlip,
+  onDuplicate,
   onDeleteArea,
   onPlanArea,
 }: {
@@ -1010,6 +1057,7 @@ function AreaInspector({
   updateArea: (id: string, fn: (a: Area) => Area) => void;
   onRotate: (a: Area) => void;
   onFlip: (a: Area, axis: 'x' | 'y') => void;
+  onDuplicate: (a: Area) => void;
   onDeleteArea: (id: string) => void;
   onPlanArea: (a: Area) => void;
 }) {
@@ -1027,6 +1075,7 @@ function AreaInspector({
           updateArea={updateArea}
           onRotate={onRotate}
           onFlip={onFlip}
+          onDuplicate={onDuplicate}
           onDeleteArea={onDeleteArea}
           onPlanArea={onPlanArea}
         />
@@ -1040,6 +1089,7 @@ function AreaPanel({
   updateArea,
   onRotate,
   onFlip,
+  onDuplicate,
   onDeleteArea,
   onPlanArea,
 }: {
@@ -1047,6 +1097,7 @@ function AreaPanel({
   updateArea: (id: string, fn: (a: Area) => Area) => void;
   onRotate: (a: Area) => void;
   onFlip: (a: Area, axis: 'x' | 'y') => void;
+  onDuplicate: (a: Area) => void;
   onDeleteArea: (id: string) => void;
   onPlanArea: (a: Area) => void;
 }) {
@@ -1188,6 +1239,14 @@ function AreaPanel({
       <div className="design-area-actions">
         <button className="btn-primary" type="button" onClick={() => onPlanArea(area)}>
           Plan this area
+        </button>
+        <button
+          className="btn-ghost btn-sm"
+          type="button"
+          onClick={() => onDuplicate(area)}
+          title="Duplicate (Ctrl/Cmd+D)"
+        >
+          Duplicate
         </button>
         <button
           className="btn-ghost btn-sm"
