@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  areaUsedColors,
   cmToCells,
   compositeArea,
   flipX,
   flipY,
   mergePalette,
+  recolorAreaIndex,
   remapCells,
   repeatFit,
   rotateCW,
@@ -13,6 +15,57 @@ import {
   type Area,
 } from './design';
 import { getCloth } from './cloth';
+
+function motifArea(cells: number[][]): Area {
+  return { id: 'a', name: 'a', x: 0, y: 0, w: cells[0].length, h: cells.length, motifs: [{ patternKey: 'k', x: 0, y: 0, cells }] };
+}
+
+describe('areaUsedColors', () => {
+  it('returns distinct nonzero indices, sorted, excluding empty', () => {
+    expect(areaUsedColors(motifArea([[0, 2], [1, 2]]))).toEqual([1, 2]);
+  });
+  it('includes repeat-motif colours', () => {
+    const a: Area = { id: 'a', name: 'a', x: 0, y: 0, w: 2, h: 1, motifs: [], repeat: { mode: 'horizontal', patternKey: 'k', cells: [[3, 0]] } };
+    expect(areaUsedColors(a)).toEqual([3]);
+  });
+});
+
+describe('recolorAreaIndex', () => {
+  const palette = [null, { hex: '#aa0000' }, { hex: '#00aa00' }];
+
+  it('remaps the area to an existing palette colour (dedupe by hex)', () => {
+    const a = motifArea([[1, 2], [1, 0]]);
+    // recolour index 1 → #00AA00 which already exists at index 2
+    const { palette: pal, area } = recolorAreaIndex(a, 1, { hex: '#00AA00' }, palette);
+    expect(pal).toEqual([null, { hex: '#aa0000' }, { hex: '#00aa00' }]); // unchanged
+    expect(area.motifs[0].cells).toEqual([[2, 2], [2, 0]]);
+  });
+
+  it('appends a new colour when the hex is not in the palette', () => {
+    const a = motifArea([[1, 1]]);
+    const { palette: pal, area } = recolorAreaIndex(a, 1, { hex: '#123456' }, palette);
+    expect(pal[3]).toEqual({ hex: '#123456' });
+    expect(area.motifs[0].cells).toEqual([[3, 3]]);
+  });
+
+  it('carries a DMC ref onto the new palette colour', () => {
+    const a = motifArea([[1, 1]]);
+    const { palette: pal } = recolorAreaIndex(a, 1, { hex: '#321321', dmc: { number: '321', name: 'Red' } }, palette);
+    expect(pal[3]).toEqual({ hex: '#321321', dmc: { number: '321', name: 'Red' } });
+  });
+
+  it('leaves other indices untouched', () => {
+    const a = motifArea([[1, 2]]);
+    const { area } = recolorAreaIndex(a, 1, { hex: '#123456' }, palette);
+    expect(area.motifs[0].cells[0][1]).toBe(2); // index 2 unchanged
+  });
+
+  it('never remaps the empty index 0', () => {
+    const a = motifArea([[0, 1]]);
+    const { area } = recolorAreaIndex(a, 0, { hex: '#123456' }, palette);
+    expect(area).toBe(a);
+  });
+});
 
 describe('cmToCells', () => {
   it('converts cm to cells on Aida-14', () => {
@@ -30,31 +83,39 @@ describe('cmToCells', () => {
 
 describe('mergePalette', () => {
   it('keeps index 0 as empty and maps to 0', () => {
-    const { palette, indexMap } = mergePalette([null], [null, '#aa0000']);
+    const { palette, indexMap } = mergePalette([null], [null, { hex: '#aa0000' }]);
     expect(palette[0]).toBeNull();
     expect(indexMap[0]).toBe(0);
-    expect(palette[indexMap[1]]).toBe('#aa0000');
+    expect(palette[indexMap[1]]?.hex).toBe('#aa0000');
   });
 
   it('dedupes identical hex case-insensitively', () => {
-    const design = [null, '#AA0000'];
-    const { palette, indexMap } = mergePalette(design, [null, '#aa0000', '#00ff00']);
+    const design = [null, { hex: '#AA0000' }];
+    const { palette, indexMap } = mergePalette(design, [null, { hex: '#aa0000' }, { hex: '#00ff00' }]);
     // #aa0000 already present at index 1 → reuse; #00ff00 appended at 2
-    expect(palette).toEqual([null, '#AA0000', '#00ff00']);
+    expect(palette.map((c) => c?.hex ?? null)).toEqual([null, '#AA0000', '#00ff00']);
     expect(indexMap[1]).toBe(1);
     expect(indexMap[2]).toBe(2);
   });
 
   it('concatenates disjoint palettes', () => {
-    const { palette, indexMap } = mergePalette([null, '#111111'], [null, '#222222', '#333333']);
-    expect(palette).toEqual([null, '#111111', '#222222', '#333333']);
+    const { palette, indexMap } = mergePalette(
+      [null, { hex: '#111111' }],
+      [null, { hex: '#222222' }, { hex: '#333333' }],
+    );
+    expect(palette.map((c) => c?.hex ?? null)).toEqual([null, '#111111', '#222222', '#333333']);
     expect(indexMap).toEqual([0, 2, 3]);
   });
 
   it('maps palette holes to empty', () => {
-    const { indexMap } = mergePalette([null], [null, null, '#444444']);
+    const { indexMap } = mergePalette([null], [null, null, { hex: '#444444' }]);
     expect(indexMap[1]).toBe(0);
     expect(indexMap[2]).toBe(1);
+  });
+
+  it('carries a DMC ref through when appending', () => {
+    const { palette } = mergePalette([null], [null, { hex: '#abc123', dmc: { number: '99', name: 'X' } }]);
+    expect(palette[1]).toEqual({ hex: '#abc123', dmc: { number: '99', name: 'X' } });
   });
 });
 
@@ -163,7 +224,7 @@ describe('trimCells', () => {
 });
 
 describe('compositeArea', () => {
-  const palette = [null, '#aa0000', '#00aa00'];
+  const palette = [null, { hex: '#aa0000' }, { hex: '#00aa00' }];
 
   it('empty area composites to all zeros', () => {
     const p = compositeArea(area({ w: 3, h: 2 }), palette);
@@ -247,7 +308,7 @@ describe('repeatFit', () => {
   });
 
   it('composites a repeating motif tiled across the area', () => {
-    const palette = [null, '#aa0000'];
+    const palette = [null, { hex: '#aa0000' }];
     const a = area({
       w: 4,
       h: 1,

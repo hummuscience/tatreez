@@ -1,4 +1,4 @@
-import type { DmcRef } from '../engine/types';
+import type { DmcRef, PaletteColor } from '../engine/types';
 
 /**
  * DMC floss catalog used by the editor color-replace picker.
@@ -113,6 +113,26 @@ export const DMC_CATALOG: readonly DmcCatalogEntry[] = [
 export const DMC_BY_NUMBER: ReadonlyMap<string, DmcCatalogEntry> = new Map(
   DMC_CATALOG.map((e) => [e.number, e]),
 );
+
+/** Catalog lookup keyed by lower-case hex (first entry wins on duplicates). */
+export const DMC_BY_HEX: ReadonlyMap<string, DmcCatalogEntry> = (() => {
+  const m = new Map<string, DmcCatalogEntry>();
+  for (const e of DMC_CATALOG) {
+    const k = e.hex.toLowerCase();
+    if (!m.has(k)) m.set(k, e);
+  }
+  return m;
+})();
+
+/**
+ * Build a {@link PaletteColor} from a hex string: attach the DMC ref when the
+ * hex exactly matches a catalog colour, otherwise keep it as a plain-hex
+ * fallback. This is the "DMC everywhere, hex as fallback" resolver.
+ */
+export function colorFromHex(hex: string): PaletteColor {
+  const e = DMC_BY_HEX.get(hex.toLowerCase());
+  return e ? { hex: e.hex, dmc: { number: e.number, name: e.name } } : { hex };
+}
 
 /**
  * The set of DMC numbers actually used across a collection of patterns —

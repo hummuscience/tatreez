@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ColorIndex, Pattern } from '../engine/types';
+import type { ColorIndex, Palette, PaletteColor, Pattern } from '../engine/types';
 import {
   type Area,
   type Design,
   type RepeatMode,
+  areaUsedColors,
   cmToCells,
   compositeArea,
   flipX,
@@ -11,11 +12,14 @@ import {
   mergePalette,
   newId,
   patternPalette,
+  recolorAreaIndex,
   remapCells,
   repeatFit,
   rotateTurns,
   trimCells,
 } from '../project/design';
+import { libraryDmcNumbers } from '../patterns/dmcCatalog';
+import ColorReplacePopover from './ColorReplacePopover';
 import {
   CLOTH_OPTIONS,
   DEFAULT_CLOTH_ID,
@@ -312,6 +316,12 @@ function DesignComposer({
   const [fComplexity, setFComplexity] = useState<ComplexityBucket | null>(null);
 
   const library = useMemo(() => buildLibrary(), []);
+  // DMC numbers used across the library — powers the picker's "library only"
+  // (traditional) filter.
+  const libraryNumbers = useMemo(
+    () => libraryDmcNumbers(library.map((l) => l.pattern)),
+    [library],
+  );
   const activeArea = design.areas.find((a) => a.id === activeAreaId) ?? null;
   // An "empty" area (no motif, no repeat) is a marked filter target — drawn to
   // size the tray to it. Selecting one auto-filters the library to fit.
@@ -543,6 +553,18 @@ function DesignComposer({
     onChange({
       ...design,
       areas: design.areas.map((a) => (a.id === id ? fn(a) : a)),
+    });
+  };
+
+  // Recolour one palette index within a single area: remaps that area's cells
+  // and extends the design palette if needed (other areas keep the old index).
+  const recolorActiveArea = (oldIndex: number, color: PaletteColor) => {
+    if (!activeArea) return;
+    const { palette, area } = recolorAreaIndex(activeArea, oldIndex, color, design.palette);
+    onChange({
+      ...design,
+      palette,
+      areas: design.areas.map((a) => (a.id === area.id ? area : a)),
     });
   };
 
@@ -1088,6 +1110,9 @@ function DesignComposer({
           <AreaInspector
             area={activeArea}
             selectedCount={selectedIds.size}
+            palette={design.palette}
+            libraryNumbers={libraryNumbers}
+            onRecolor={recolorActiveArea}
             updateArea={updateArea}
             onRotate={() => rotateGroup(1)}
             onFlip={(axis) => {
@@ -1256,11 +1281,17 @@ interface AreaActions {
 function AreaInspector({
   area,
   selectedCount,
+  palette,
+  libraryNumbers,
+  onRecolor,
   updateArea,
   ...actions
 }: {
   area: Area | null;
   selectedCount: number;
+  palette: Palette;
+  libraryNumbers: ReadonlySet<string>;
+  onRecolor: (oldIndex: number, color: PaletteColor) => void;
   updateArea: (id: string, fn: (a: Area) => Area) => void;
 } & AreaActions) {
   return (
@@ -1274,7 +1305,15 @@ function AreaInspector({
           Drop a pattern on the canvas, then click it. Shift-click or drag a box to select several.
         </p>
       ) : (
-        <AreaPanel area={area} multi={selectedCount > 1} updateArea={updateArea} {...actions} />
+        <AreaPanel
+          area={area}
+          multi={selectedCount > 1}
+          palette={palette}
+          libraryNumbers={libraryNumbers}
+          onRecolor={onRecolor}
+          updateArea={updateArea}
+          {...actions}
+        />
       )}
     </section>
   );
@@ -1283,6 +1322,9 @@ function AreaInspector({
 function AreaPanel({
   area,
   multi,
+  palette,
+  libraryNumbers,
+  onRecolor,
   updateArea,
   onRotate,
   onFlip,
@@ -1292,8 +1334,12 @@ function AreaPanel({
 }: {
   area: Area;
   multi: boolean;
+  palette: Palette;
+  libraryNumbers: ReadonlySet<string>;
+  onRecolor: (oldIndex: number, color: PaletteColor) => void;
   updateArea: (id: string, fn: (a: Area) => Area) => void;
 } & AreaActions) {
+  const [recolorIndex, setRecolorIndex] = useState<number | null>(null);
   const repeating = !!area.repeat;
   const repeatCells = area.repeat?.cells ?? [];
   const mh = repeatCells.length;
@@ -1390,6 +1436,49 @@ function AreaPanel({
           ⇅ Flip Y
         </button>
       </div>
+
+      {/* Colours: one swatch per colour used in this area; click to replace. */}
+      {(() => {
+        const used = areaUsedColors(area);
+        if (used.length === 0) return null;
+        const onCanvas: PaletteColor[] = palette.filter(
+          (c): c is PaletteColor => c != null,
+        );
+        return (
+          <div className="design-colors">
+            <div className="design-colors-label">Colours · الألوان</div>
+            <div className="design-swatches">
+              {used.map((idx) => {
+                const c = palette[idx];
+                if (!c) return null;
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    className="design-swatch"
+                    style={{ background: c.hex }}
+                    title={c.dmc ? `DMC ${c.dmc.number} · ${c.dmc.name}` : c.hex}
+                    onClick={() => setRecolorIndex(recolorIndex === idx ? null : idx)}
+                  />
+                );
+              })}
+            </div>
+            {recolorIndex != null && palette[recolorIndex] && (
+              <ColorReplacePopover
+                current={palette[recolorIndex]!}
+                libraryNumbers={libraryNumbers}
+                suggested={onCanvas}
+                suggestedLabel="On the canvas"
+                onPick={(color) => {
+                  onRecolor(recolorIndex, color);
+                  setRecolorIndex(null);
+                }}
+                onClose={() => setRecolorIndex(null)}
+              />
+            )}
+          </div>
+        );
+      })()}
 
       <label className="design-fit-toggle">
         <input

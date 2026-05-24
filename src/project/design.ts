@@ -8,8 +8,9 @@
  * planned on its own via the existing Plan tab.
  */
 
-import type { ColorIndex, Pattern } from '../engine/types';
-import { getPalette } from '../patterns/builtin';
+import type { ColorIndex, Palette, PaletteColor, Pattern } from '../engine/types';
+import { getPaletteColors } from '../patterns/builtin';
+import { colorFromHex } from '../patterns/dmcCatalog';
 import type { ClothOption } from './cloth';
 
 export interface PlacedMotif {
@@ -56,8 +57,12 @@ export interface Design {
   gridW: number;
   gridH: number;
   areas: Area[];
-  /** Merged design palette: index 0 = null (empty), 1..N = hex strings. */
-  palette: (string | null)[];
+  /**
+   * Merged design palette: index 0 = null (empty), 1..N are PaletteColor
+   * objects (hex + optional DMC). DMC is carried through so the UI can show
+   * thread numbers, falling back to hex when a colour has no DMC.
+   */
+  palette: Palette;
 }
 
 /** Convert a real-world cm length to a count of stitch cells on a cloth. */
@@ -72,30 +77,31 @@ export function cmToCells(cm: number, cloth: ClothOption): number {
  * maps to 0.
  */
 export function mergePalette(
-  designPalette: (string | null)[],
-  motifPalette: (string | null)[],
-): { palette: (string | null)[]; indexMap: number[] } {
+  designPalette: Palette,
+  motifPalette: Palette,
+): { palette: Palette; indexMap: number[] } {
   const palette = designPalette.slice();
   if (palette.length === 0) palette.push(null); // ensure index 0 = empty
   const indexMap: number[] = [0];
 
   for (let i = 1; i < motifPalette.length; i++) {
-    const hex = motifPalette[i];
-    if (hex == null) {
+    const c = motifPalette[i];
+    if (c == null) {
       // A hole in the motif palette: map to empty.
       indexMap[i] = 0;
       continue;
     }
-    const norm = hex.toLowerCase();
+    const norm = c.hex.toLowerCase();
     let found = -1;
     for (let j = 1; j < palette.length; j++) {
-      if ((palette[j] ?? '').toLowerCase() === norm) {
+      if ((palette[j]?.hex ?? '').toLowerCase() === norm) {
         found = j;
         break;
       }
     }
     if (found === -1) {
-      palette.push(hex);
+      // Carry DMC if present; otherwise resolve by exact hex (hex fallback).
+      palette.push(c.dmc ? c : colorFromHex(c.hex));
       found = palette.length - 1;
     }
     indexMap[i] = found;
@@ -201,7 +207,7 @@ export function repeatFit(area: Area, motifW: number, motifH: number, mode: Repe
  * set, the repeat motif tiles whole copies (repeat wins over free motifs).
  * Cells painted out of bounds are clipped.
  */
-export function compositeArea(area: Area, palette: (string | null)[]): Pattern {
+export function compositeArea(area: Area, palette: Palette): Pattern {
   const grid: ColorIndex[][] = Array.from({ length: area.h }, () =>
     new Array<ColorIndex>(area.w).fill(0),
   );
@@ -241,15 +247,66 @@ export function compositeArea(area: Area, palette: (string | null)[]): Pattern {
     width: area.w,
     height: area.h,
     cells: grid,
-    // The design's internal palette is hex-only (motif composition predates
-    // DMC); wrap into the PaletteColor shape at this Pattern boundary.
-    palette: palette.map((hex) => (hex == null ? null : { hex })),
+    // The design palette is already PaletteColor objects (DMC + hex).
+    palette: palette.map((c) => (c == null ? null : { ...c })),
   };
 }
 
-/** Convenience: pull a library pattern's effective palette (per-pattern or global). */
-export function patternPalette(p: Pattern): (string | null)[] {
-  return getPalette(p);
+/** Convenience: pull a library pattern's effective palette as DMC+hex colours. */
+export function patternPalette(p: Pattern): Palette {
+  return getPaletteColors(p);
+}
+
+/**
+ * The distinct design-palette indices actually used by an area's painted
+ * cells (motifs and/or its repeat motif), sorted ascending. Index 0 (empty)
+ * is excluded. Used to show one editable swatch per colour in the area.
+ */
+export function areaUsedColors(area: Area): number[] {
+  const used = new Set<number>();
+  const scan = (cells: ColorIndex[][]) => {
+    for (const row of cells) for (const v of row) if (v > 0) used.add(v);
+  };
+  if (area.repeat) scan(area.repeat.cells);
+  for (const m of area.motifs) scan(m.cells);
+  return [...used].sort((a, b) => a - b);
+}
+
+/**
+ * Recolour one design-palette index *within a single area* to a new hex.
+ * Ensures the hex exists in the design palette (dedupe by case-insensitive
+ * hex, appending if new) and remaps only this area's cells from the old index
+ * to the resolved index — other areas keep referencing the old index, so the
+ * recolour is local to the area.
+ *
+ * Returns the updated palette and area. Index 0 (empty) is never remapped.
+ */
+export function recolorAreaIndex(
+  area: Area,
+  oldIndex: number,
+  color: PaletteColor,
+  palette: Palette,
+): { palette: Palette; area: Area } {
+  if (oldIndex <= 0) return { palette, area };
+  const norm = color.hex.toLowerCase();
+  const nextPalette = palette.slice();
+  let target = nextPalette.findIndex(
+    (c, i) => i > 0 && (c?.hex ?? '').toLowerCase() === norm,
+  );
+  if (target === -1) {
+    // Carry DMC if provided; else resolve by exact hex (hex fallback).
+    nextPalette.push(color.dmc ? color : colorFromHex(color.hex));
+    target = nextPalette.length - 1;
+  }
+  if (target === oldIndex) return { palette: nextPalette, area };
+  const remap = (cells: ColorIndex[][]) =>
+    cells.map((row) => row.map((v) => (v === oldIndex ? target : v)));
+  const nextArea: Area = {
+    ...area,
+    motifs: area.motifs.map((m) => ({ ...m, cells: remap(m.cells) })),
+    repeat: area.repeat ? { ...area.repeat, cells: remap(area.repeat.cells) } : undefined,
+  };
+  return { palette: nextPalette, area: nextArea };
 }
 
 let idCounter = 0;

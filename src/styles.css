@@ -195,6 +195,18 @@ body {
 .cr-name { color: var(--ink-soft); }
 .cr-empty { font-size: 12px; color: var(--ink-soft); padding: 6px; }
 .cr-hex { display: flex; align-items: center; gap: 6px; }
+.cr-suggested { display: flex; flex-direction: column; gap: 6px; }
+.cr-suggested-label { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-soft); }
+.cr-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.cr-swatch { width: 22px; height: 22px; border-radius: 4px; border: 1px solid var(--rule-strong); cursor: pointer; padding: 0; }
+.cr-swatch:hover { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Per-area colour swatches in the inspector */
+.design-colors { display: flex; flex-direction: column; gap: 6px; }
+.design-colors-label { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-soft); }
+.design-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.design-swatch { width: 24px; height: 24px; border-radius: 4px; border: 1px solid var(--rule-strong); cursor: pointer; padding: 0; }
+.design-swatch:hover { outline: 2px solid var(--accent); outline-offset: 1px; }
 .cr-hex-input { flex: 1; }
 
 /* DMC line in the plans material list */

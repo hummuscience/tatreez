@@ -7,6 +7,14 @@ interface Props {
   current: PaletteColor;
   /** DMC numbers used across the library (for the "library only" filter). */
   libraryNumbers: ReadonlySet<string>;
+  /**
+   * Optional quick-pick colours shown above the search list (e.g. the other
+   * colours already used on the design canvas). Deduped by hex; the current
+   * colour is excluded.
+   */
+  suggested?: PaletteColor[];
+  /** Heading for the suggested section (defaults to "On the canvas"). */
+  suggestedLabel?: string;
   /** Called with the chosen replacement colour. */
   onPick: (color: PaletteColor) => void;
   /** Called to dismiss without picking. */
@@ -25,12 +33,28 @@ const HEX_RE = /^#?[0-9a-fA-F]{6}$/;
 export default function ColorReplacePopover({
   current,
   libraryNumbers,
+  suggested,
+  suggestedLabel = 'On the canvas',
   onPick,
   onClose,
 }: Props) {
   const [query, setQuery] = useState('');
   const [libraryOnly, setLibraryOnly] = useState(false);
   const [hex, setHex] = useState('');
+
+  // Quick-pick swatches: dedupe by hex, drop the current colour.
+  const quickPicks = useMemo(() => {
+    if (!suggested) return [];
+    const seen = new Set<string>([current.hex.toLowerCase()]);
+    const out: PaletteColor[] = [];
+    for (const c of suggested) {
+      const k = c.hex.toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(c);
+    }
+    return out;
+  }, [suggested, current.hex]);
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -61,6 +85,25 @@ export default function ColorReplacePopover({
           ×
         </button>
       </div>
+
+      {quickPicks.length > 0 && (
+        <div className="cr-suggested">
+          <div className="cr-suggested-label">{suggestedLabel}</div>
+          <div className="cr-swatches">
+            {quickPicks.map((c) => (
+              <button
+                type="button"
+                key={c.hex}
+                className="cr-swatch"
+                style={{ background: c.hex }}
+                title={c.dmc ? `DMC ${c.dmc.number} · ${c.dmc.name}` : c.hex}
+                onClick={() => onPick(c)}
+                aria-label={c.dmc ? `DMC ${c.dmc.number}` : c.hex}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       <input
         className="input cr-search"
