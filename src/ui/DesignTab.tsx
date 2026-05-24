@@ -56,6 +56,13 @@ import {
   type SizeBucket,
 } from './patternFilters';
 
+/**
+ * Slack (in stitches) for the "fits area" filter: a pattern up to this many
+ * cells larger than the marked area on either dimension still counts as
+ * fitting, so a near-fit isn't excluded over a few stitches.
+ */
+const FIT_TOLERANCE = 5;
+
 interface Props {
   /** Route a composited area to the Plan tab. */
   onPlanArea: (pattern: Pattern, key: string) => void;
@@ -867,7 +874,11 @@ function DesignComposer({
     if (fSize && sizeBucket(p) !== fSize) return false;
     if (fComplexity && complexityBucket(paintedCells(p)) !== fComplexity) return false;
     if (fitsActive && activeArea) {
-      if (p.width > activeArea.w || p.height > activeArea.h) return false;
+      // Leeway: allow patterns up to FIT_TOLERANCE stitches larger than the
+      // area on each side, so a near-fit isn't filtered out by a few cells.
+      if (p.width > activeArea.w + FIT_TOLERANCE || p.height > activeArea.h + FIT_TOLERANCE) {
+        return false;
+      }
     }
     return true;
   });
@@ -1003,7 +1014,7 @@ function DesignComposer({
             disabled={!activeArea || activeIsEmpty}
             onChange={(e) => setFitOnly(e.target.checked)}
           />
-          Fits area{activeArea ? ` (≤ ${activeArea.w}×${activeArea.h})` : ''}
+          Fits area{activeArea ? ` (≲ ${activeArea.w + FIT_TOLERANCE}×${activeArea.h + FIT_TOLERANCE})` : ''}
         </label>
 
         <span className="design-filter-count">
