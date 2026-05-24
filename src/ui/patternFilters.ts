@@ -44,6 +44,32 @@ export function paintedCells(p: Pattern): number {
   return n;
 }
 
+/**
+ * Dimensions of a pattern's painted bounding box (ignoring blank margin rows
+ * and columns), in stitches. This matches what a motif occupies once placed
+ * (placement trims to the painted box), so it's the size to compare against a
+ * marked area. An all-empty pattern returns {w:0,h:0}.
+ */
+export function paintedSize(p: Pattern): { w: number; h: number } {
+  let top = Infinity;
+  let left = Infinity;
+  let bottom = -1;
+  let right = -1;
+  for (let y = 0; y < p.cells.length; y++) {
+    const row = p.cells[y];
+    for (let x = 0; x < row.length; x++) {
+      if (row[x] > 0) {
+        if (y < top) top = y;
+        if (y > bottom) bottom = y;
+        if (x < left) left = x;
+        if (x > right) right = x;
+      }
+    }
+  }
+  if (bottom < 0) return { w: 0, h: 0 };
+  return { w: right - left + 1, h: bottom - top + 1 };
+}
+
 export type SizeBucket = 'small' | 'medium' | 'large';
 export type ComplexityBucket = 'simple' | 'medium' | 'complex';
 export type ColorBucket = 1 | 2 | 3 | 4 | 5;

@@ -54,6 +54,7 @@ import {
   complexityBucket,
   matchesQuery,
   paintedCells,
+  paintedSize,
   sizeBucket,
   type ColorBucket,
   type ComplexityBucket,
@@ -77,19 +78,21 @@ interface Props {
 interface LibEntry {
   key: string;
   pattern: Pattern;
+  /** Painted bounding-box size (what the motif occupies once placed/trimmed). */
+  fitW: number;
+  fitH: number;
 }
 
 function buildLibrary(): LibEntry[] {
   const out: LibEntry[] = [];
-  for (const [id, p] of Object.entries(BUILTIN_PATTERNS)) {
-    out.push({ key: builtinPatternKey(id), pattern: p });
-  }
-  for (const s of listSavedPatterns()) {
-    out.push({ key: savedPatternKey(s.id), pattern: s.pattern });
-  }
-  for (const [slug, p] of Object.entries(TIRAZAIN_ARCHIVE)) {
-    out.push({ key: `tirazain:${slug}`, pattern: p });
-  }
+  const add = (key: string, pattern: Pattern) => {
+    const { w, h } = paintedSize(pattern);
+    // Fall back to the full chart size for an all-empty pattern.
+    out.push({ key, pattern, fitW: w || pattern.width, fitH: h || pattern.height });
+  };
+  for (const [id, p] of Object.entries(BUILTIN_PATTERNS)) add(builtinPatternKey(id), p);
+  for (const s of listSavedPatterns()) add(savedPatternKey(s.id), s.pattern);
+  for (const [slug, p] of Object.entries(TIRAZAIN_ARCHIVE)) add(`tirazain:${slug}`, p);
   return out;
 }
 
@@ -405,6 +408,9 @@ function DesignComposer({
   // Pixel length of the rotate handle's stem above an area.
   const HANDLE_STEM = 22;
   const HANDLE_HIT = 9;
+  // Radius of the per-area delete (×) button, drawn at the top-right corner.
+  const DELETE_R = 8;
+  const deleteButtonCenter = (a: Area) => ({ cx: (a.x + a.w) * cs, cy: a.y * cs });
 
   // ----- rendering -----
   // Drawn imperatively (called from the effect AND from pointer handlers) so
@@ -454,6 +460,28 @@ function DesignComposer({
       ctx.setLineDash([5, 4]);
       ctx.strokeRect(area.x * cs + 0.5, area.y * cs + 0.5, area.w * cs, area.h * cs);
       ctx.restore();
+
+      // Delete (×) button in the top-right corner of a selected area.
+      if (isSelected && !rotating) {
+        const { cx: bx, cy: by } = deleteButtonCenter(area);
+        ctx.save();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#b5654a';
+        ctx.beginPath();
+        ctx.arc(bx, by, DELETE_R, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.6;
+        ctx.lineCap = 'round';
+        const k = DELETE_R * 0.45;
+        ctx.beginPath();
+        ctx.moveTo(bx - k, by - k);
+        ctx.lineTo(bx + k, by + k);
+        ctx.moveTo(bx + k, by - k);
+        ctx.lineTo(bx - k, by + k);
+        ctx.stroke();
+        ctx.restore();
+      }
     }
 
     // One rotate handle for the selection, above the combined bounding box.
@@ -675,9 +703,35 @@ function DesignComposer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedIds, design]);
 
+  // Delete one area; skip the confirm for an empty (motif-less) area.
+  const deleteArea = (a: Area) => {
+    const isEmpty = a.motifs.length === 0 && !a.repeat;
+    if (!isEmpty && !confirm(`Delete area "${a.name}"?`)) return;
+    onChange({ ...design, areas: design.areas.filter((x) => x.id !== a.id) });
+    setSelectedIds((cur) => {
+      const next = new Set(cur);
+      next.delete(a.id);
+      return next;
+    });
+    if (activeAreaId === a.id) setActiveAreaId(null);
+  };
+
   // ----- pointer: select / move / rotate / marquee -----
   const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const additive = e.shiftKey || e.metaKey || e.ctrlKey;
+
+    // Delete (×) button on a selected area takes priority over everything.
+    {
+      const [px, py] = pointerPx(e.clientX, e.clientY);
+      for (const a of design.areas) {
+        if (!selectedIds.has(a.id)) continue;
+        const { cx: bx, cy: by } = deleteButtonCenter(a);
+        if (Math.hypot(px - bx, py - by) <= DELETE_R + 2) {
+          deleteArea(a);
+          return;
+        }
+      }
+    }
 
     // Rotate handle (on the selection) takes priority over body hits.
     if (overRotateHandle(e.clientX, e.clientY)) {
@@ -896,13 +950,14 @@ function DesignComposer({
     if (fSize && sizeBucket(p) !== fSize) return false;
     if (fComplexity && complexityBucket(paintedCells(p)) !== fComplexity) return false;
     if (fitsActive && activeArea) {
-      // A pattern fits if it fits in *either* orientation — its normal w×h or
-      // rotated h×w (90°/270°). So a wide motif still matches a tall area, etc.
-      // Leeway: allow up to FIT_TOLERANCE stitches over on each side.
+      // Compare against the painted bounding box (fitW/fitH) — what the motif
+      // actually occupies once placed (placement trims blank margins) — not
+      // the raw chart size, so the ±FIT_TOLERANCE leeway is meaningful.
+      // A pattern fits in either orientation (upright w×h or rotated h×w).
       const aw = activeArea.w + FIT_TOLERANCE;
       const ah = activeArea.h + FIT_TOLERANCE;
-      const fitsUpright = p.width <= aw && p.height <= ah;
-      const fitsRotated = p.height <= aw && p.width <= ah;
+      const fitsUpright = l.fitW <= aw && l.fitH <= ah;
+      const fitsRotated = l.fitH <= aw && l.fitW <= ah;
       if (!fitsUpright && !fitsRotated) return false;
     }
     return true;
