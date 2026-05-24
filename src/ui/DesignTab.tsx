@@ -874,11 +874,14 @@ function DesignComposer({
     if (fSize && sizeBucket(p) !== fSize) return false;
     if (fComplexity && complexityBucket(paintedCells(p)) !== fComplexity) return false;
     if (fitsActive && activeArea) {
-      // Leeway: allow patterns up to FIT_TOLERANCE stitches larger than the
-      // area on each side, so a near-fit isn't filtered out by a few cells.
-      if (p.width > activeArea.w + FIT_TOLERANCE || p.height > activeArea.h + FIT_TOLERANCE) {
-        return false;
-      }
+      // A pattern fits if it fits in *either* orientation — its normal w×h or
+      // rotated h×w (90°/270°). So a wide motif still matches a tall area, etc.
+      // Leeway: allow up to FIT_TOLERANCE stitches over on each side.
+      const aw = activeArea.w + FIT_TOLERANCE;
+      const ah = activeArea.h + FIT_TOLERANCE;
+      const fitsUpright = p.width <= aw && p.height <= ah;
+      const fitsRotated = p.height <= aw && p.width <= ah;
+      if (!fitsUpright && !fitsRotated) return false;
     }
     return true;
   });
