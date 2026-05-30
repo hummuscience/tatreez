@@ -208,8 +208,16 @@ export function rotateCellsByAngle(
     if (ry < minY) minY = ry;
     if (ry > maxY) maxY = ry;
   }
-  const ow = Math.max(1, Math.ceil(maxX - minX));
-  const oh = Math.max(1, Math.ceil(maxY - minY));
+  const rawW = maxX - minX;
+  const rawH = maxY - minY;
+  const ow = Math.max(1, Math.ceil(rawW));
+  const oh = Math.max(1, Math.ceil(rawH));
+  // Centre the painted bbox inside the output grid: the ceil-padding
+  // (sub-cell slack between rawW and ow) is split half on each side.
+  // Without this, Math.floor pushes the slack to the high side and biases
+  // votes toward low indices, producing asymmetric rotated diamonds.
+  const offX = (ow - rawW) / 2 - minX;
+  const offY = (oh - rawH) / 2 - minY;
 
   // Supersample each source cell on an N×N grid; project each subsample to
   // the output frame and tally votes per (output cell, colour). Then each
@@ -233,8 +241,8 @@ export function rotateCellsByAngle(
           const dy = py - icy;
           const rx = cos * dx + sin * dy;
           const ry = -sin * dx + cos * dy;
-          const ox = Math.floor(rx - minX);
-          const oy = Math.floor(ry - minY);
+          const ox = Math.floor(rx + offX);
+          const oy = Math.floor(ry + offY);
           if (ox < 0 || oy < 0 || ox >= ow || oy >= oh) continue;
           const m = votes[oy][ox];
           m.set(c, (m.get(c) ?? 0) + 1);
