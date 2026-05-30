@@ -70,6 +70,17 @@ export function cmToCells(cm: number, cloth: ClothOption): number {
   return Math.max(1, Math.round((cm / 2.54) * cloth.count));
 }
 
+/** Convert inches to stitch cells (cloth.count is stitches per inch). */
+export function inchesToCells(inches: number, cloth: ClothOption): number {
+  return Math.max(1, Math.round(inches * cloth.count));
+}
+
+/** Convert a stitch-cell count back to cm (used when the user enters size
+ * in stitches but storage is cm). */
+export function cellsToCm(cells: number, cloth: ClothOption): number {
+  return (cells / cloth.count) * 2.54;
+}
+
 /**
  * Fold a motif's palette into a design palette, deduping by case-insensitive
  * hex. Returns the (possibly extended) design palette plus an `indexMap` from

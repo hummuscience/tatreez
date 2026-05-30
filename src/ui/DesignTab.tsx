@@ -5,10 +5,12 @@ import {
   type Design,
   type RepeatMode,
   areaUsedColors,
+  cellsToCm,
   cmToCells,
   compositeArea,
   flipX,
   flipY,
+  inchesToCells,
   mergePalette,
   newId,
   patternPalette,
@@ -158,10 +160,27 @@ function DesignList({
   const [clothId, setClothId] = useState(DEFAULT_CLOTH_ID);
   const [widthCm, setWidthCm] = useState(20);
   const [heightCm, setHeightCm] = useState(20);
+  type SizeUnit = 'cm' | 'in' | 'st';
+  const [unit, setUnit] = useState<SizeUnit>(() => {
+    try { return (localStorage.getItem('design:sizeUnit') as SizeUnit) || 'cm'; } catch { return 'cm'; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('design:sizeUnit', unit); } catch { /* noop */ }
+  }, [unit]);
 
   const cloth = getCloth(clothId);
   const gridW = cmToCells(widthCm, cloth);
   const gridH = cmToCells(heightCm, cloth);
+
+  // Display + edit values in the chosen unit (storage is always cm).
+  const displayW = unit === 'cm' ? widthCm : unit === 'in' ? Math.round((widthCm / 2.54) * 10) / 10 : gridW;
+  const displayH = unit === 'cm' ? heightCm : unit === 'in' ? Math.round((heightCm / 2.54) * 10) / 10 : gridH;
+  const setFromInput = (raw: string, setCm: (cm: number) => void) => {
+    const v = Math.max(1, Number(raw) || 1);
+    if (unit === 'cm') setCm(v);
+    else if (unit === 'in') setCm(v * 2.54);
+    else setCm(cellsToCm(v, cloth));
+  };
 
   const create = () => {
     const d: Design = {
@@ -202,21 +221,31 @@ function DesignList({
             </select>
           </label>
           <label className="field">
-            <span>Width (cm)</span>
+            <span>Unit</span>
+            <select value={unit} onChange={(e) => setUnit(e.target.value as SizeUnit)}>
+              <option value="cm">cm</option>
+              <option value="in">inches</option>
+              <option value="st">stitches</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Width ({unit})</span>
             <input
               type="number"
               min={1}
-              value={widthCm}
-              onChange={(e) => setWidthCm(Math.max(1, Number(e.target.value) || 1))}
+              step={unit === 'st' ? 1 : 0.1}
+              value={displayW}
+              onChange={(e) => setFromInput(e.target.value, setWidthCm)}
             />
           </label>
           <label className="field">
-            <span>Height (cm)</span>
+            <span>Height ({unit})</span>
             <input
               type="number"
               min={1}
-              value={heightCm}
-              onChange={(e) => setHeightCm(Math.max(1, Number(e.target.value) || 1))}
+              step={unit === 'st' ? 1 : 0.1}
+              value={displayH}
+              onChange={(e) => setFromInput(e.target.value, setHeightCm)}
             />
           </label>
           <div className="design-new-meta">
@@ -325,6 +354,36 @@ function DesignComposer({
   // Border-draw tool: when on, dragging on the canvas tiles the armed motif
   // along the drag axis instead of marking a filter area.
   const [borderMode, setBorderMode] = useState(false);
+  // Overflow banner: surfaced when a placed/drawn motif's natural size
+  // exceeds the canvas grid. Carries the suggested grow-to size so the
+  // banner button can apply it in one tap.
+  const [overflowSuggest, setOverflowSuggest] =
+    useState<{ gridW: number; gridH: number } | null>(null);
+  const BUFFER = 4;
+  // Compare the requested cell extents to the current grid and, if either
+  // dimension overflows, set a suggestion to grow with a small buffer on
+  // each side. Caller still places the (clamped) motif; this just opens a
+  // dismissable banner.
+  const suggestGrowIfOverflow = (needW: number, needH: number) => {
+    if (needW <= design.gridW && needH <= design.gridH) return;
+    const nextW = Math.max(design.gridW, needW + BUFFER * 2);
+    const nextH = Math.max(design.gridH, needH + BUFFER * 2);
+    setOverflowSuggest({ gridW: nextW, gridH: nextH });
+  };
+  // Apply the suggestion: bump the grid and convert the new size to cm so
+  // storage stays unit-consistent.
+  const growCanvasToSuggestion = () => {
+    if (!overflowSuggest) return;
+    const cloth = getCloth(design.clothId);
+    onChange({
+      ...design,
+      gridW: overflowSuggest.gridW,
+      gridH: overflowSuggest.gridH,
+      widthCm: cellsToCm(overflowSuggest.gridW, cloth),
+      heightCm: cellsToCm(overflowSuggest.gridH, cloth),
+    });
+    setOverflowSuggest(null);
+  };
   // View toggles. Hiding either side widens the canvas (the grid template
   // collapses the dropped column). Persisted so the user's preferred
   // working surface survives a refresh.
@@ -1044,6 +1103,10 @@ function DesignComposer({
 
     const mh = cells.length;
     const mw = mh > 0 ? cells[0].length : 1;
+    // Place clamped to grid; if the motif's natural size exceeds either
+    // dimension, surface a "Grow canvas" banner so the user can fix it in
+    // one tap rather than discovering the silent clip later.
+    suggestGrowIfOverflow(mw, mh);
     const w = Math.min(mw, design.gridW);
     const h = Math.min(mh, design.gridH);
 
@@ -1405,6 +1468,23 @@ function DesignComposer({
         )}
 
         <div className="design-canvas-wrap" ref={wrapRef}>
+          {overflowSuggest && (
+            <div className="design-overflow-banner" role="status">
+              <span>
+                Pattern doesn't fit. Grow canvas to{' '}
+                <strong>
+                  {overflowSuggest.gridW}×{overflowSuggest.gridH}
+                </strong>{' '}
+                stitches?
+              </span>
+              <button type="button" className="btn-primary btn-sm" onClick={growCanvasToSuggestion}>
+                Grow to fit
+              </button>
+              <button type="button" className="btn-ghost btn-sm" onClick={() => setOverflowSuggest(null)}>
+                Dismiss
+              </button>
+            </div>
+          )}
           <div className="design-canvas-scroll" ref={canvasScrollRef}>
             <canvas
               ref={canvasRef}
@@ -1614,6 +1694,39 @@ function ClothBar({
   useEffect(() => {
     try { localStorage.setItem('design:clothBarOpen', open ? '1' : '0'); } catch { /* noop */ }
   }, [open]);
+  // Unit the user enters dimensions in. Storage stays cm — this is purely
+  // a display + input concern. Persisted per browser.
+  type SizeUnit = 'cm' | 'in' | 'st';
+  const [unit, setUnit] = useState<SizeUnit>(() => {
+    try { return (localStorage.getItem('design:sizeUnit') as SizeUnit) || 'cm'; } catch { return 'cm'; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('design:sizeUnit', unit); } catch { /* noop */ }
+  }, [unit]);
+
+  // Display values in the chosen unit, derived from the cm-stored width/height.
+  const displayW = unit === 'cm'
+    ? Math.round(design.widthCm * 10) / 10
+    : unit === 'in'
+      ? Math.round((design.widthCm / 2.54) * 10) / 10
+      : design.gridW;
+  const displayH = unit === 'cm'
+    ? Math.round(design.heightCm * 10) / 10
+    : unit === 'in'
+      ? Math.round((design.heightCm / 2.54) * 10) / 10
+      : design.gridH;
+  // Convert a user-entered value (in the current unit) into cm + grid cells.
+  const toCm = (v: number): number => {
+    if (unit === 'cm') return v;
+    if (unit === 'in') return v * 2.54;
+    // stitches → cells → cm
+    return cellsToCm(v, cloth);
+  };
+  const toCells = (v: number): number => {
+    if (unit === 'cm') return cmToCells(v, cloth);
+    if (unit === 'in') return inchesToCells(v, cloth);
+    return Math.max(1, Math.round(v));
+  };
 
   return (
     <section className="design-clothbar">
@@ -1674,26 +1787,36 @@ function ClothBar({
             </select>
           </label>
           <label className="field field-inline">
-            <span>Width (cm)</span>
+            <span>Unit</span>
+            <select value={unit} onChange={(e) => setUnit(e.target.value as SizeUnit)}>
+              <option value="cm">cm</option>
+              <option value="in">inches</option>
+              <option value="st">stitches</option>
+            </select>
+          </label>
+          <label className="field field-inline">
+            <span>Width ({unit})</span>
             <input
               type="number"
               min={1}
-              value={design.widthCm}
+              step={unit === 'st' ? 1 : 0.1}
+              value={displayW}
               onChange={(e) => {
-                const widthCm = Math.max(1, Number(e.target.value) || 1);
-                onChange({ ...design, widthCm, gridW: cmToCells(widthCm, cloth) });
+                const v = Math.max(1, Number(e.target.value) || 1);
+                onChange({ ...design, widthCm: toCm(v), gridW: toCells(v) });
               }}
             />
           </label>
           <label className="field field-inline">
-            <span>Height (cm)</span>
+            <span>Height ({unit})</span>
             <input
               type="number"
               min={1}
-              value={design.heightCm}
+              step={unit === 'st' ? 1 : 0.1}
+              value={displayH}
               onChange={(e) => {
-                const heightCm = Math.max(1, Number(e.target.value) || 1);
-                onChange({ ...design, heightCm, gridH: cmToCells(heightCm, cloth) });
+                const v = Math.max(1, Number(e.target.value) || 1);
+                onChange({ ...design, heightCm: toCm(v), gridH: toCells(v) });
               }}
             />
           </label>

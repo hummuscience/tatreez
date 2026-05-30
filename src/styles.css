@@ -427,6 +427,21 @@ body {
 }
 /* View toggle group lives at the right end of the cloth bar. */
 .design-clothbar-views { display: inline-flex; gap: 6px; align-items: center; margin-left: auto; }
+/* Overflow banner — appears when a placed motif's natural size exceeds the
+   canvas. Sits between the canvas and whatever's above it. */
+.design-overflow-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--card-radius);
+  background: var(--accent-tint);
+  font-size: 13px;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+.design-overflow-banner span { flex: 1; }
 .design-clothbar-meta { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); align-self: center; white-space: nowrap; }
 .field-inline { min-width: 110px; }
 
