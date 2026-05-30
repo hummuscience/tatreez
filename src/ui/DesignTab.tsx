@@ -1053,11 +1053,21 @@ function DesignComposer({
           const merged = mergePalette(design.palette, patternPalette(entry.pattern));
           const baseCells = trimCells(remapCells(entry.pattern.cells, merged.indexMap));
           const horizontal = w >= h;
-          // For a horizontal strip, decompose along the cell grid as-is.
-          // For a vertical strip, rotate 90° first so the "tiles left-to-
-          // right" period detection runs on the visually-horizontal axis,
-          // then rotate the composed strip back.
-          const sourceForDecomp = horizontal ? baseCells : rotateTurns(baseCells, 1);
+          // Source border patterns come in two natural orientations:
+          //   - Horizontal-native (Dayer Qabbeh, Nafnoof border): long side is
+          //     width, the tiling axis is left-to-right.
+          //   - Vertical-native (Sinsal): long side is height, the tiling axis
+          //     is top-to-bottom.
+          // We always want the strip's tiling axis to match the drag's
+          // dominant axis. So: rotate the source 90° iff its long axis
+          // disagrees with the drag axis. After this, the period-detection
+          // (which scans column-by-column) always runs along the intended
+          // tiling direction.
+          const baseW = baseCells[0]?.length ?? 0;
+          const baseH = baseCells.length;
+          const sourceIsHorizontal = baseW >= baseH;
+          const needsRotate = sourceIsHorizontal !== horizontal;
+          const sourceForDecomp = needsRotate ? rotateTurns(baseCells, 1) : baseCells;
           const decomp = decomposeBorder(sourceForDecomp);
           const mh = sourceForDecomp.length;
           const periodW = decomp.period[0]?.length ?? 1;
@@ -1072,8 +1082,10 @@ function DesignComposer({
           const periods = Math.max(1, Math.round(innerLen / periodW));
           const stripLen = leftCapW + periods * periodW + rightCapW;
           let stripCells = composeBorder(decomp, stripLen);
-          // Rotate the composed strip back for vertical borders.
-          if (!horizontal) stripCells = rotateTurns(stripCells, 3); // 270° = -90°
+          // Undo the forward rotation: if we rotated the source 90° CW to
+          // align tiling with the drag axis, rotate the composed strip 90°
+          // CCW so it lands oriented correctly on the canvas.
+          if (needsRotate) stripCells = rotateTurns(stripCells, 3); // 270° = -90°
           const sh = stripCells.length;
           const sw = sh > 0 ? stripCells[0].length : 1;
           const ax = horizontal ? x : Math.min(it.x0, it.x1);
