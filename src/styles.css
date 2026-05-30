@@ -75,6 +75,14 @@ body {
 .hdr-meta-val { font-family: var(--font-display); font-size: 18px; color: var(--ink); font-weight: var(--display-weight); }
 .hdr-meta-sep { width: 1px; height: 28px; background: var(--rule); }
 
+/* Account / sync control */
+.acct { position: relative; display: flex; align-items: center; gap: 8px; }
+.acct-email { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-pop { position: absolute; top: calc(100% + 8px); right: 0; z-index: 20; display: flex; flex-direction: column; gap: 8px; padding: 14px; min-width: 220px; background: var(--surface); border: 1px solid var(--rule); border-radius: var(--input-radius); box-shadow: 0 6px 24px rgba(0,0,0,0.12); }
+.acct-pop form { display: flex; flex-direction: column; gap: 8px; }
+.acct-or { text-align: center; font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-soft); }
+.acct-sent { margin: 0; font-size: 12px; color: var(--ink-soft); }
+
 /* Tabs — bilingual labels stacked */
 .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--rule); padding-top: 4px; }
 .tab { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 16px 22px 14px; background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; color: var(--ink-soft); font-family: inherit; }
@@ -682,6 +690,9 @@ body {
 /* Transparent full-viewport click-away catcher, below the panel. Tapping the
    page (outside the panel) closes it; it does NOT dim or block the page, so the
    library stays scrollable and interactive behind the open panel. */
+/* Transparent full-viewport click-away catcher, below the panel. Tapping the
+   page (outside the panel) closes it; it does NOT dim or block the page, so the
+   library stays scrollable and interactive behind the open panel. */
 .pd-catcher {
   position: fixed;
   inset: 0;
@@ -692,23 +703,23 @@ body {
   background: transparent;
   cursor: default;
 }
-/* The panel is pinned to the right edge of the *visual* viewport and spans its
-   full height, so it always sits in view regardless of page scroll. Using
-   fixed + 100dvh (100vh fallback) keeps it correct on iPad, where the
-   collapsing address bar otherwise mispositions a height:100% panel. */
+/* A content-sized card pinned to the top-right corner of the viewport. It is
+   only as tall as its content (capped at the viewport, scrolling internally if
+   ever taller), so there's no empty full-height drawer. Using fixed keeps it in
+   view regardless of page scroll and of iPad's collapsing address bar. */
 .pd-panel {
   position: fixed;
-  top: 0;
-  right: 0;
+  top: 12px;
+  right: 12px;
   z-index: 50;
-  width: min(420px, 92vw);
-  height: 100vh;
-  height: 100dvh;
+  width: min(380px, 92vw);
+  max-height: calc(100dvh - 24px);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   background: var(--surface);
-  border-left: 1px solid var(--rule);
-  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.18);
+  border: 1px solid var(--rule);
+  border-radius: var(--card-radius);
+  box-shadow: -8px 8px 28px rgba(0, 0, 0, 0.22);
   padding: 20px;
   box-sizing: border-box;
 }
