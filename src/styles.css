@@ -411,6 +411,17 @@ body {
 .design-body-l-no-inspector { grid-template-columns: 124px minmax(0, 1fr); }
 .design-body-l-no-patterns.design-body-l-no-inspector { grid-template-columns: minmax(0, 1fr); }
 .design-view-toggles { display: flex; gap: 6px; align-items: center; }
+/* Toggle chips need to read as buttons even in their "off" state, so the
+   user sees that they're tappable when the corresponding panel is hidden.
+   Off = bold accent outline + accent text. On = filled (uses .chip-active). */
+.chip-toggle {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+  padding: 5px 13px;
+}
+.chip-toggle:hover { background: var(--accent-tint); }
+.chip-toggle.chip-active { background: var(--accent); color: var(--surface); border-color: var(--accent); }
 /* Left arm. Clipped to the canvas height (inline max-height) so a long result
    list never overflows past the canvas; the remainder fills the other arms. */
 .design-motif-col {

@@ -320,11 +320,14 @@ function DesignComposer({
   // View toggles. Hiding either side widens the canvas (the grid template
   // collapses the dropped column). Persisted so the user's preferred
   // working surface survives a refresh.
+  // Default both panels OFF so a first-time visitor lands on a wide canvas;
+  // the user opens what they need. Choices persist (storage value '1' = on,
+  // '0' = off; absence = default off).
   const [showPatterns, setShowPatterns] = useState<boolean>(() => {
-    try { return localStorage.getItem('design:showPatterns') !== '0'; } catch { return true; }
+    try { return localStorage.getItem('design:showPatterns') === '1'; } catch { return false; }
   });
   const [showInspector, setShowInspector] = useState<boolean>(() => {
-    try { return localStorage.getItem('design:showInspector') !== '0'; } catch { return true; }
+    try { return localStorage.getItem('design:showInspector') === '1'; } catch { return false; }
   });
   useEffect(() => {
     try { localStorage.setItem('design:showPatterns', showPatterns ? '1' : '0'); } catch { /* noop */ }
@@ -1316,21 +1319,21 @@ function DesignComposer({
             <div className="design-view-toggles" role="group" aria-label="Panels">
               <button
                 type="button"
-                className={`chip${showPatterns ? ' chip-active' : ''}`}
+                className={`chip chip-toggle${showPatterns ? ' chip-active' : ''}`}
                 aria-pressed={showPatterns}
                 onClick={() => setShowPatterns((v) => !v)}
                 title={showPatterns ? 'Hide pattern library' : 'Show pattern library'}
               >
-                Patterns
+                {showPatterns ? 'Patterns ✓' : '+ Patterns'}
               </button>
               <button
                 type="button"
-                className={`chip${showInspector ? ' chip-active' : ''}`}
+                className={`chip chip-toggle${showInspector ? ' chip-active' : ''}`}
                 aria-pressed={showInspector}
                 onClick={() => setShowInspector((v) => !v)}
                 title={showInspector ? 'Hide inspector' : 'Show inspector'}
               >
-                Inspector
+                {showInspector ? 'Inspector ✓' : '+ Inspector'}
               </button>
             </div>
             <p className="design-canvas-hint">
