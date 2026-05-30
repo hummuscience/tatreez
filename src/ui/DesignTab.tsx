@@ -21,6 +21,7 @@ import {
   recolorAreaIndex,
   remapCells,
   repeatFit,
+  rotateCellsByAngle,
   rotateTurns,
   trimCells,
 } from '../project/design';
@@ -552,7 +553,7 @@ function DesignComposer({
   // Pointer interaction on the canvas:
   //  - move: drag the grabbed area; if it's part of the multi-selection, the
   //    whole selection moves by the same offset (offX/offY from the grabbed).
-  //  - rotate: live preview angle that snaps to 90° on release; rotates the
+  //  - rotate: live preview angle that snaps to 45° on release; rotates the
   //    whole selection around its combined centre.
   //  - marquee: a dragged-out rectangle. mode 'mark' makes an empty filter
   //    area (plain drag on empty canvas); mode 'select' rubber-band-selects
@@ -931,6 +932,75 @@ function DesignComposer({
     onChange({ ...design, areas });
   };
 
+  // Rotate the selected areas as a group by an arbitrary angle (radians,
+  // CW positive). Snaps to 45° steps so the handle has 8 stops (0°, 45°,
+  // 90°, 135°, ..., 315°). For 90° multiples the resampler degenerates to
+  // the lossless rotation; for 45° steps each area's cells are resampled
+  // with majority-coverage so square cells "rotate" into a blocky diamond.
+  // Each area's bbox grows to fit its rotated extent.
+  const rotateGroupByAngle = (radians: number) => {
+    // Snap to the nearest 45° (π/4).
+    const STEP = Math.PI / 4;
+    const snapped = Math.round(radians / STEP) * STEP;
+    if (Math.abs(snapped) < 1e-6) return; // identity rotation
+    const box = selectionBox();
+    if (!box) return;
+    const ccx = box.x + box.w / 2;
+    const ccy = box.y + box.h / 2;
+    const cos = Math.cos(snapped);
+    const sin = Math.sin(snapped);
+    const areas = design.areas.map((a) => {
+      if (!selectedIds.has(a.id)) return a;
+      // Rotate each motif's cells (and the repeat's, if any) by the snapped angle.
+      const rotCells = (cells: ColorIndex[][]) => rotateCellsByAngle(cells, snapped);
+      const newMotifs = a.motifs.map((m) => {
+        const nc = rotCells(m.cells);
+        return { ...m, cells: nc, x: 0, y: 0 };
+      });
+      const newRepeat = a.repeat ? { ...a.repeat, cells: rotCells(a.repeat.cells) } : undefined;
+      // New bbox = max extent across all rotated motif grids.
+      let newW = 0;
+      let newH = 0;
+      for (const m of newMotifs) {
+        if (m.cells.length > newH) newH = m.cells.length;
+        const w = m.cells[0]?.length ?? 0;
+        if (w > newW) newW = w;
+      }
+      if (newRepeat) {
+        if (newRepeat.cells.length > newH) newH = newRepeat.cells.length;
+        const w = newRepeat.cells[0]?.length ?? 0;
+        if (w > newW) newW = w;
+      }
+      if (newW === 0 || newH === 0) {
+        newW = a.w;
+        newH = a.h;
+      }
+      // Re-place the area's centre by rotating its old centre about the
+      // group centre.
+      const acx = a.x + a.w / 2;
+      const acy = a.y + a.h / 2;
+      const dx = acx - ccx;
+      const dy = acy - ccy;
+      const ndx = cos * dx + sin * dy;
+      const ndy = -sin * dx + cos * dy;
+      const nxc = ccx + ndx;
+      const nyc = ccy + ndy;
+      const nx = Math.round(nxc - newW / 2);
+      const ny = Math.round(nyc - newH / 2);
+      return {
+        ...a,
+        x: Math.max(0, Math.min(nx, design.gridW - newW)),
+        y: Math.max(0, Math.min(ny, design.gridH - newH)),
+        w: newW,
+        h: newH,
+        motifs: newMotifs,
+        repeat: newRepeat,
+      };
+    });
+    pushUndo(design);
+    onChange({ ...design, areas });
+  };
+
   // Duplicate a set of areas (new ids, offset by a few cells, clamped on-grid)
   // and select the copies. Used by the keyboard paste and inspector button.
   const duplicateAreas = (srcs: Area[]): Area[] => {
@@ -1279,12 +1349,14 @@ function DesignComposer({
       paintCellAt(cx, cy, it.value, it.color);
       interactionRef.current = { ...it, lastCx: cx, lastCy: cy };
     } else {
-      // rotate: angle from group centre to pointer; Alt snaps to 90° live.
+      // rotate: angle from group centre to pointer. Alt snaps the live
+      // preview to 45° steps (matching the release snap); plain drag is
+      // free preview that then snaps on release.
       const [px, py] = pointerPx(e.clientX, e.clientY);
       const ccx = it.cx * cs;
       const ccy = it.cy * cs;
       let angle = Math.atan2(py - ccy, px - ccx) + Math.PI / 2; // 0 = pointing up
-      if (e.altKey) angle = Math.round(angle / (Math.PI / 2)) * (Math.PI / 2);
+      if (e.altKey) angle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
       interactionRef.current = { ...it, angle };
       draw();
     }
@@ -1313,13 +1385,12 @@ function DesignComposer({
     interactionRef.current = null;
     if (!it) return;
     if (it.kind === 'rotate') {
-      // Snap the free angle to the nearest quarter turn (clockwise positive).
-      const turns = Math.round(it.angle / (Math.PI / 2));
-      if (((turns % 4) + 4) % 4 !== 0) {
-        rotateGroup(turns);
-      } else {
-        draw(); // clear the preview transform
-      }
+      // Snap the free angle to the nearest 45° step (eight stops total).
+      // For 90° multiples this is lossless; 45° / 135° / 225° / 315° trigger
+      // the majority-coverage resampler. A zero snap (identity) just clears
+      // the preview transform.
+      rotateGroupByAngle(it.angle);
+      draw();
     } else if (it.kind === 'marquee' && it.mode === 'select') {
       // Rubber-band: select every area the box touches.
       const x = Math.min(it.x0, it.x1);

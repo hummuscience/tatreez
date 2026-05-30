@@ -151,6 +151,123 @@ export function rotateTurns(cells: ColorIndex[][], turns: number): ColorIndex[][
   return out;
 }
 
+/**
+ * Rotate a cell grid by an arbitrary angle (radians, clockwise positive)
+ * using majority-coverage resampling. The output grid is sized to fit the
+ * rotated input's axis-aligned bounding box. Each output cell takes the
+ * colour of the source cell that covers it the most, decided by
+ * supersampling the source cells onto the output grid.
+ *
+ * For angles that are exact multiples of 90° this returns the same result
+ * as `rotateTurns` (lossless), since each source cell maps 1:1 to an
+ * output cell. For 45° and other angles, square source cells become
+ * rotated squares (diamonds at 45°) in output space; each output cell
+ * picks whichever rotated source cell covers it the most.
+ *
+ * The empty colour (index 0) is treated as transparent: cells whose
+ * majority coverage is empty fall back to whatever painted colour came
+ * second, so the rotated shape doesn't get eaten by surrounding zeros.
+ */
+export function rotateCellsByAngle(
+  cells: ColorIndex[][],
+  radians: number,
+): ColorIndex[][] {
+  const ih = cells.length;
+  if (ih === 0) return [];
+  const iw = cells[0]?.length ?? 0;
+  if (iw === 0) return [];
+
+  // Fast path: angle is a multiple of 90° → use the lossless turn rotate.
+  const TWO_PI = Math.PI * 2;
+  const norm = ((radians % TWO_PI) + TWO_PI) % TWO_PI;
+  const quarterTurns = norm / (Math.PI / 2);
+  const epsilon = 1e-6;
+  if (Math.abs(quarterTurns - Math.round(quarterTurns)) < epsilon) {
+    return rotateTurns(cells, Math.round(quarterTurns));
+  }
+
+  // CW rotation matrix: [cos θ, sin θ; -sin θ, cos θ].
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  // Rotate the four corners around the input centre to find the output
+  // bbox. Input cell coords are integer in [0, iw) × [0, ih).
+  const icx = iw / 2;
+  const icy = ih / 2;
+  const corners = [
+    [0 - icx, 0 - icy],
+    [iw - icx, 0 - icy],
+    [iw - icx, ih - icy],
+    [0 - icx, ih - icy],
+  ];
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const [dx, dy] of corners) {
+    const rx = cos * dx + sin * dy;
+    const ry = -sin * dx + cos * dy;
+    if (rx < minX) minX = rx;
+    if (rx > maxX) maxX = rx;
+    if (ry < minY) minY = ry;
+    if (ry > maxY) maxY = ry;
+  }
+  const ow = Math.max(1, Math.ceil(maxX - minX));
+  const oh = Math.max(1, Math.ceil(maxY - minY));
+
+  // Supersample each source cell on an N×N grid; project each subsample to
+  // the output frame and tally votes per (output cell, colour). Then each
+  // output cell takes the majority colour. N=4 → 16 votes per source cell.
+  const N = 4;
+  // votes[oy][ox] = Map<colour, weight>
+  const votes: Map<ColorIndex, number>[][] = Array.from(
+    { length: oh },
+    () => Array.from({ length: ow }, () => new Map<ColorIndex, number>()),
+  );
+  for (let sy = 0; sy < ih; sy++) {
+    for (let sx = 0; sx < iw; sx++) {
+      const c = cells[sy][sx];
+      for (let j = 0; j < N; j++) {
+        for (let i = 0; i < N; i++) {
+          // Subsample centre in source space (cell-centred coordinates).
+          const px = sx + (i + 0.5) / N;
+          const py = sy + (j + 0.5) / N;
+          // Translate to centre, rotate CW, translate back to the output frame.
+          const dx = px - icx;
+          const dy = py - icy;
+          const rx = cos * dx + sin * dy;
+          const ry = -sin * dx + cos * dy;
+          const ox = Math.floor(rx - minX);
+          const oy = Math.floor(ry - minY);
+          if (ox < 0 || oy < 0 || ox >= ow || oy >= oh) continue;
+          const m = votes[oy][ox];
+          m.set(c, (m.get(c) ?? 0) + 1);
+        }
+      }
+    }
+  }
+  // Resolve each output cell to its majority colour. Empty (0) is treated
+  // as low priority: a tie with a painted colour goes to the painted one.
+  const out: ColorIndex[][] = Array.from(
+    { length: oh },
+    () => new Array<ColorIndex>(ow).fill(0),
+  );
+  for (let y = 0; y < oh; y++) {
+    for (let x = 0; x < ow; x++) {
+      const m = votes[y][x];
+      if (m.size === 0) continue;
+      let bestColor: ColorIndex = 0;
+      let bestWeight = -1;
+      for (const [c, w] of m) {
+        // Prefer painted colours over empty when weights are equal.
+        const adjusted = c === 0 ? w - 0.5 : w;
+        if (adjusted > bestWeight) {
+          bestWeight = adjusted;
+          bestColor = c;
+        }
+      }
+      out[y][x] = bestColor;
+    }
+  }
+  return out;
+}
+
 /** Mirror a cell grid horizontally (flip left↔right). */
 export function flipX(cells: ColorIndex[][]): ColorIndex[][] {
   return cells.map((row) => row.slice().reverse());

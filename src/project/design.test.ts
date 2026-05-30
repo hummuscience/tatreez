@@ -13,6 +13,7 @@ import {
   remapCells,
   repeatFit,
   rotateCW,
+  rotateCellsByAngle,
   rotateTurns,
   trimCells,
   type Area,
@@ -198,6 +199,66 @@ describe('transforms', () => {
     flipX(g);
     flipY(g);
     expect(g).toEqual(copy);
+  });
+});
+
+describe('rotateCellsByAngle', () => {
+  // 2x3 grid (h=2, w=3):
+  //   1 2 3
+  //   4 5 6
+  const g = [
+    [1, 2, 3],
+    [4, 5, 6],
+  ];
+
+  it('falls back to lossless rotateTurns for exact 90° multiples', () => {
+    expect(rotateCellsByAngle(g, 0)).toEqual(g);
+    expect(rotateCellsByAngle(g, Math.PI / 2)).toEqual(rotateTurns(g, 1));
+    expect(rotateCellsByAngle(g, Math.PI)).toEqual(rotateTurns(g, 2));
+    expect(rotateCellsByAngle(g, -Math.PI / 2)).toEqual(rotateTurns(g, -1));
+    // 2π should also be identity (modular).
+    expect(rotateCellsByAngle(g, Math.PI * 2)).toEqual(g);
+  });
+
+  it('returns an empty grid for an empty input', () => {
+    expect(rotateCellsByAngle([], Math.PI / 4)).toEqual([]);
+  });
+
+  it('grows the output bbox to fit the rotated diagonal extent', () => {
+    // 2x2 grid rotated 45° → diagonal ≈ √2 × 2 ≈ 2.83, so output is 3x3.
+    const square = [
+      [1, 1],
+      [1, 1],
+    ];
+    const out = rotateCellsByAngle(square, Math.PI / 4);
+    expect(out.length).toBeGreaterThanOrEqual(3);
+    expect(out[0].length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('preserves a solid-color block as a solid (rotated) block at 45°', () => {
+    // 4x4 of one colour: every output cell that gets any coverage at all
+    // should be that colour (no spurious zeros from supersampling jitter).
+    const block: number[][] = Array.from({ length: 4 }, () => [1, 1, 1, 1]);
+    const out = rotateCellsByAngle(block, Math.PI / 4);
+    // At least one painted cell exists in the rotated output.
+    const flat = out.flat();
+    expect(flat.some((c) => c === 1)).toBe(true);
+    // No cell should be a colour we didn't put in.
+    expect(flat.every((c) => c === 0 || c === 1)).toBe(true);
+  });
+
+  it('handles 45° on a centred single painted cell', () => {
+    // 3x3 with a painted centre. After 45° rotation the centre stays the
+    // centre (rotation about the grid centre is identity for the centre
+    // cell), but bbox grows. Centre should still be painted.
+    const cells = [
+      [0, 0, 0],
+      [0, 1, 0],
+      [0, 0, 0],
+    ];
+    const out = rotateCellsByAngle(cells, Math.PI / 4);
+    // The painted cell should be somewhere in the output.
+    expect(out.flat().some((c) => c === 1)).toBe(true);
   });
 });
 

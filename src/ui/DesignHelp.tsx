@@ -53,7 +53,7 @@ const SECTIONS: Section[] = [
   {
     title: 'Rotate, flip, duplicate',
     items: [
-      { gesture: 'Rotate handle (above selection)', what: 'Drag the small knob above a selected area. Rotates 90° on release. Alt-drag (desktop) snaps live to quarter turns.' },
+      { gesture: 'Rotate handle (above selection)', what: 'Drag the small knob above a selected area. Snaps to 45° steps on release (eight stops: 0°, 45°, 90°, 135°, 180°, …). 90° steps are lossless; 45° steps resample cells onto the grid by majority coverage. Alt-drag (desktop) snaps the live preview too.' },
       { gesture: 'Flip', what: 'Use the inspector\'s Flip H / Flip V buttons (open the Inspector panel from the top bar).' },
       { gesture: 'Duplicate', what: 'Cmd/Ctrl+D copies the selection. Cmd/Ctrl+C / +V also works.' },
       { gesture: 'Delete', what: 'Tap the × button on a selected area, or press Delete/Backspace.' },
