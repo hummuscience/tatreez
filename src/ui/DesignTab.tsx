@@ -7,7 +7,9 @@ import {
   areaUsedColors,
   cellsToCm,
   cmToCells,
+  composeBorder,
   compositeArea,
+  decomposeBorder,
   flipX,
   flipY,
   inchesToCells,
@@ -1025,16 +1027,37 @@ function DesignComposer({
           const merged = mergePalette(design.palette, patternPalette(entry.pattern));
           const baseCells = trimCells(remapCells(entry.pattern.cells, merged.indexMap));
           const horizontal = w >= h;
-          const cells = horizontal ? baseCells : rotateTurns(baseCells, 1);
-          const mh = cells.length;
-          const mw = mh > 0 ? cells[0].length : 1;
-          // Border area spans the drag along the dominant axis and is one
-          // motif tall (or wide) on the other axis. Anchored at start cell.
+          // For a horizontal strip, decompose along the cell grid as-is.
+          // For a vertical strip, rotate 90° first so the "tiles left-to-
+          // right" period detection runs on the visually-horizontal axis,
+          // then rotate the composed strip back.
+          const sourceForDecomp = horizontal ? baseCells : rotateTurns(baseCells, 1);
+          const decomp = decomposeBorder(sourceForDecomp);
+          const mh = sourceForDecomp.length;
+          const periodW = decomp.period[0]?.length ?? 1;
+          // Build a strip exactly long enough to fit the drag, padded to a
+          // whole number of periods after the left cap so the right cap
+          // lines up. (composeBorder handles partial periods by overlaying
+          // the right cap, but a clean whole-period fill reads best.)
+          const leftCapW = decomp.leftCap[0]?.length ?? 0;
+          const rightCapW = decomp.rightCap[0]?.length ?? 0;
+          const dragLen = horizontal ? w : h;
+          const innerLen = Math.max(periodW, dragLen - leftCapW - rightCapW);
+          const periods = Math.max(1, Math.round(innerLen / periodW));
+          const stripLen = leftCapW + periods * periodW + rightCapW;
+          let stripCells = composeBorder(decomp, stripLen);
+          // Rotate the composed strip back for vertical borders.
+          if (!horizontal) stripCells = rotateTurns(stripCells, 3); // 270° = -90°
+          const sh = stripCells.length;
+          const sw = sh > 0 ? stripCells[0].length : 1;
           const ax = horizontal ? x : Math.min(it.x0, it.x1);
           const ay = horizontal ? Math.min(it.y0, it.y1) : y;
-          const aw = horizontal ? Math.min(w, design.gridW - ax) : Math.min(mw, design.gridW - ax);
-          const ah = horizontal ? Math.min(mh, design.gridH - ay) : Math.min(h, design.gridH - ay);
+          const aw = Math.min(sw, design.gridW - ax);
+          const ah = Math.min(sh, design.gridH - ay);
           if (aw > 0 && ah > 0) {
+            // Place as a single motif (not a repeat) since the cells already
+            // contain the full tiled strip with end caps. Predictable, no
+            // resampling at edges.
             const area: Area = {
               id: newId('area'),
               name: `border ${design.areas.length + 1}`,
@@ -1042,12 +1065,12 @@ function DesignComposer({
               y: ay,
               w: aw,
               h: ah,
-              motifs: [],
-              // `horizontal` caps to 1 row of tiles (right for a horizontal
-              // strip); `grid` tiles both directions (vertical strip = many
-              // rows × 1 col since area width equals motif width).
-              repeat: { mode: horizontal ? 'horizontal' : 'grid', patternKey: armedKeyRef.current, cells },
+              motifs: [{ patternKey: armedKeyRef.current, cells: stripCells, x: 0, y: 0 }],
             };
+            // Skip ah/aw mismatches caused by grid-edge clipping — the
+            // motif's own bounds may extend past `aw`; that's fine, the
+            // canvas painter clips it.
+            void mh;
             onChange({ ...design, palette: merged.palette, areas: [...design.areas, area] });
             selectOne(area.id);
             // Leave borderMode on so the user can lay several borders in a

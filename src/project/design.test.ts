@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   areaUsedColors,
   cmToCells,
+  composeBorder,
   compositeArea,
+  decomposeBorder,
   flipX,
   flipY,
   mergePalette,
@@ -317,5 +319,64 @@ describe('repeatFit', () => {
     const p = compositeArea(a, palette);
     // motif [1,0] repeated twice across width 4 → [1,0,1,0]
     expect(p.cells[0]).toEqual([1, 0, 1, 0]);
+  });
+});
+describe('decomposeBorder', () => {
+  it('finds the smallest period of a pure repeat', () => {
+    // Three copies of [1,0,2] — period should be 3 wide.
+    const cells = [
+      [1, 0, 2, 1, 0, 2, 1, 0, 2],
+      [0, 1, 0, 0, 1, 0, 0, 1, 0],
+    ];
+    const d = decomposeBorder(cells);
+    expect(d.leftCap).toEqual([]);
+    expect(d.rightCap).toEqual([]);
+    expect(d.period).toEqual([
+      [1, 0, 2],
+      [0, 1, 0],
+    ]);
+  });
+
+  it('detects end caps around a repeating middle', () => {
+    // Left cap [9] · period [1,2] · period [1,2] · right cap [8].
+    const cells = [
+      [9, 1, 2, 1, 2, 8],
+    ];
+    const d = decomposeBorder(cells);
+    expect(d.leftCap).toEqual([[9]]);
+    expect(d.period).toEqual([[1, 2]]);
+    expect(d.rightCap).toEqual([[8]]);
+  });
+
+  it('handles a pattern with no clean period by returning the whole as one tile', () => {
+    const cells = [[1, 2, 3, 4, 5]]; // all different, no repeat possible
+    const d = decomposeBorder(cells);
+    expect(d.leftCap).toEqual([]);
+    expect(d.rightCap).toEqual([]);
+    expect(d.period).toEqual(cells);
+  });
+
+  it('returns an empty decomposition for an empty grid', () => {
+    expect(decomposeBorder([])).toEqual({ leftCap: [], period: [], rightCap: [] });
+  });
+});
+
+describe('composeBorder', () => {
+  it('tiles period N times between the caps to fill the requested length', () => {
+    const decomp = {
+      leftCap: [[9]],
+      period: [[1, 2]],
+      rightCap: [[8]],
+    };
+    // length 9 = 1 (left) + 3 full periods (6) + 1 partial (1) + 1 (right)
+    // But the right cap overlays at the end, so the partial is overwritten.
+    const out = composeBorder(decomp, 9);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toEqual([9, 1, 2, 1, 2, 1, 2, 1, 8]);
+  });
+
+  it('returns an empty grid for length 0', () => {
+    const decomp = { leftCap: [], period: [[1]], rightCap: [] };
+    expect(composeBorder(decomp, 0)).toEqual([]);
   });
 });
