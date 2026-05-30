@@ -1179,76 +1179,169 @@ function DesignComposer({
   };
 
   // ----- pinch-to-zoom on the canvas ------------------------------------------
-  // Two simultaneous pointers (typically two fingers) drive zoom: pinch out
-  // increases zoom, pinch in decreases. We anchor the zoom around the pinch
-  // midpoint by adjusting the scroll container so the same grid point stays
-  // under the user's fingers.
-  interface Pinch { startDist: number; startZoom: number; midX: number; midY: number; startScrollLeft: number; startScrollTop: number; startMidLocalX: number; startMidLocalY: number; }
+  //
+  // iOS Safari is the awkward one: when two fingers land, it fires its
+  // proprietary `gesturestart` and cancels all in-flight Pointer Events
+  // (so a pointer-based pinch never accumulates two pointers). Our previous
+  // attempt didn't account for this — that's why pinch felt broken on iPad.
+  //
+  // The fix follows the platform guidance:
+  //   1. On WebKit (iPadOS Safari): listen to gesturestart/gesturechange/
+  //      gestureend via ref + addEventListener with { passive: false }, so
+  //      we can preventDefault() and use the accumulated `event.scale`
+  //      directly. React doesn't proxy these — it has to be a ref + native
+  //      addEventListener.
+  //   2. Elsewhere with multi-pointer support (Android Chrome, etc.): use a
+  //      two-Pointer-Events pinch as a fallback.
+  //   3. Always: a passive:false touchstart that preventDefaults when ≥2
+  //      touches land, suppressing iOS's default double-tap zoom and the
+  //      page-level scroll the gesture would otherwise trigger.
+  //
+  // The midpoint-anchored zoom keeps the grid point under the fingers
+  // stable while scaling by adjusting the scroll container's scrollLeft/
+  // scrollTop after each zoom step.
+  interface PinchState {
+    startZoom: number;
+    midClientX: number;
+    midClientY: number;
+    /** Pinch midpoint in canvas-local pixels at gesturestart. */
+    startLocalX: number;
+    startLocalY: number;
+  }
+  const pinchRef = useRef<PinchState | null>(null);
+  // For the Pointer Events fallback path.
   const pinchPointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
-  const pinchRef = useRef<Pinch | null>(null);
+  const supportsGestureEvents =
+    typeof window !== 'undefined' && 'ongesturestart' in window;
 
-  /** Returns true when the pointer should be treated as part of a pinch
-   * (i.e. we've now seen ≥2 simultaneous pointers) and the normal selection
-   * logic should bail out. */
+  /** Common: compute and apply a new zoom level anchored on the pinch
+   * midpoint. Called from both the gesture path and the pointer path. */
+  const applyPinchZoom = (state: PinchState, nextZoom: number) => {
+    const clamped = Math.max(0.5, Math.min(4, nextZoom));
+    setZoom(clamped);
+    const scaleRatio = clamped / state.startZoom;
+    // Wait for React to rerender the canvas at the new size, then adjust
+    // scroll so the pinch midpoint stays under the user's fingers.
+    requestAnimationFrame(() => {
+      const scroll = canvasScrollRef.current;
+      const r = canvasRef.current?.getBoundingClientRect();
+      if (!scroll || !r) return;
+      const newLocalX = state.startLocalX * scaleRatio;
+      const newLocalY = state.startLocalY * scaleRatio;
+      scroll.scrollLeft = newLocalX - (state.midClientX - (r.left + scroll.scrollLeft));
+      scroll.scrollTop = newLocalY - (state.midClientY - (r.top + scroll.scrollTop));
+    });
+  };
+
+  // WebKit gesturestart/gesturechange/gestureend — primary path on iPad.
+  useEffect(() => {
+    if (!supportsGestureEvents) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const onGestureStart = (e: Event) => {
+      e.preventDefault();
+      // Two-finger gesture started — cancel any in-flight selection drag.
+      interactionRef.current = null;
+      // GestureEvent carries clientX/clientY at the centroid of the touches.
+      const ge = e as unknown as { clientX: number; clientY: number };
+      const scroll = canvasScrollRef.current;
+      const r = canvas.getBoundingClientRect();
+      pinchRef.current = {
+        startZoom: zoom,
+        midClientX: ge.clientX,
+        midClientY: ge.clientY,
+        startLocalX: ge.clientX - r.left + (scroll?.scrollLeft ?? 0),
+        startLocalY: ge.clientY - r.top + (scroll?.scrollTop ?? 0),
+      };
+    };
+    const onGestureChange = (e: Event) => {
+      e.preventDefault();
+      const state = pinchRef.current;
+      if (!state) return;
+      // event.scale is the *accumulated* multiplier since gesturestart.
+      const scale = (e as unknown as { scale: number }).scale || 1;
+      applyPinchZoom(state, state.startZoom * scale);
+    };
+    const onGestureEnd = (e: Event) => {
+      e.preventDefault();
+      pinchRef.current = null;
+    };
+
+    canvas.addEventListener('gesturestart', onGestureStart, { passive: false });
+    canvas.addEventListener('gesturechange', onGestureChange, { passive: false });
+    canvas.addEventListener('gestureend', onGestureEnd, { passive: false });
+    return () => {
+      canvas.removeEventListener('gesturestart', onGestureStart);
+      canvas.removeEventListener('gesturechange', onGestureChange);
+      canvas.removeEventListener('gestureend', onGestureEnd);
+    };
+    // Intentionally omit zoom — the handler reads the latest value via the
+    // ref-stored startZoom snapshot; re-attaching on every zoom change
+    // would lose the in-flight gesture state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supportsGestureEvents]);
+
+  // Touch listener: preventDefault on multi-touch so iOS doesn't try to
+  // page-scroll or double-tap-zoom while the user pinches the canvas. CSS
+  // `touch-action: none` doesn't cover this on iOS Safari, which only
+  // supports `auto` and `manipulation`.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length >= 2) e.preventDefault();
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length >= 2) e.preventDefault();
+    };
+    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+    return () => {
+      canvas.removeEventListener('touchstart', onTouchStart);
+      canvas.removeEventListener('touchmove', onTouchMove);
+    };
+  }, []);
+
+  // Pointer-events pinch fallback for non-WebKit touch (e.g. Android Chrome).
+  // Skipped entirely on iPad — GestureEvents handle pinch there.
   const registerPinchPointer = (e: React.PointerEvent<HTMLCanvasElement>): boolean => {
+    if (supportsGestureEvents) return false;
     if (e.pointerType !== 'touch') return false;
     pinchPointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinchPointersRef.current.size < 2) return false;
-    // We've got two fingers — cancel any in-flight selection and start a pinch.
     interactionRef.current = null;
     const pts = [...pinchPointersRef.current.values()];
-    const dx = pts[0].x - pts[1].x;
-    const dy = pts[0].y - pts[1].y;
-    const startDist = Math.hypot(dx, dy) || 1;
     const midX = (pts[0].x + pts[1].x) / 2;
     const midY = (pts[0].y + pts[1].y) / 2;
+    const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
     const scroll = canvasScrollRef.current;
-    const canvas = canvasRef.current;
-    const r = canvas?.getBoundingClientRect();
+    const r = canvasRef.current?.getBoundingClientRect();
     pinchRef.current = {
-      startDist,
       startZoom: zoom,
-      midX,
-      midY,
-      startScrollLeft: scroll?.scrollLeft ?? 0,
-      startScrollTop: scroll?.scrollTop ?? 0,
-      // Pinch midpoint in the canvas's local pixel space (pre-zoom-change),
-      // so we can keep that point under the fingers after rescaling.
-      startMidLocalX: r ? midX - r.left + (scroll?.scrollLeft ?? 0) : 0,
-      startMidLocalY: r ? midY - r.top + (scroll?.scrollTop ?? 0) : 0,
+      midClientX: midX,
+      midClientY: midY,
+      startLocalX: r ? midX - r.left + (scroll?.scrollLeft ?? 0) : 0,
+      startLocalY: r ? midY - r.top + (scroll?.scrollTop ?? 0) : 0,
     };
+    // Stash startDist on the state object so updatePinch can compute scale.
+    (pinchRef.current as PinchState & { startDist: number }).startDist = dist;
     return true;
   };
 
   const updatePinch = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (supportsGestureEvents) return;
     if (!pinchPointersRef.current.has(e.pointerId)) return;
     pinchPointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    const pinch = pinchRef.current;
-    if (!pinch || pinchPointersRef.current.size < 2) return;
+    const state = pinchRef.current as (PinchState & { startDist: number }) | null;
+    if (!state || pinchPointersRef.current.size < 2) return;
     const pts = [...pinchPointersRef.current.values()];
-    const dx = pts[0].x - pts[1].x;
-    const dy = pts[0].y - pts[1].y;
-    const dist = Math.hypot(dx, dy) || 1;
-    const next = Math.max(0.5, Math.min(4, pinch.startZoom * (dist / pinch.startDist)));
-    setZoom(next);
-    // After React rerenders the canvas at the new zoom, recentre the scroll
-    // so the pinch midpoint stays put under the fingers. Defer to rAF so we
-    // run after the new canvas width/height landed.
-    const scaleRatio = next / pinch.startZoom;
-    requestAnimationFrame(() => {
-      const scroll = canvasScrollRef.current;
-      if (!scroll) return;
-      const newMidLocalX = pinch.startMidLocalX * scaleRatio;
-      const newMidLocalY = pinch.startMidLocalY * scaleRatio;
-      const r = canvasRef.current?.getBoundingClientRect();
-      if (!r) return;
-      // We want newMidLocalX to land at (midX - r.left); adjust scrollLeft.
-      scroll.scrollLeft = newMidLocalX - (pinch.midX - (r.left + scroll.scrollLeft));
-      scroll.scrollTop = newMidLocalY - (pinch.midY - (r.top + scroll.scrollTop));
-    });
+    const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
+    applyPinchZoom(state, state.startZoom * (dist / state.startDist));
   };
 
   const endPinch = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (supportsGestureEvents) return;
     pinchPointersRef.current.delete(e.pointerId);
     if (pinchPointersRef.current.size < 2) pinchRef.current = null;
   };
