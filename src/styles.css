@@ -599,8 +599,8 @@ body {
   width: min(420px, 92vw);
   height: 100%;
   overflow-y: auto;
-  background: var(--paper);
-  border-left: 1px solid var(--line);
+  background: var(--surface);
+  border-left: 1px solid var(--rule);
   box-shadow: -8px 0 24px rgba(0, 0, 0, 0.18);
   padding: 20px;
   box-sizing: border-box;
@@ -636,7 +636,7 @@ body {
 }
 .pd-name-ar {
   font-size: 14px;
-  color: var(--muted);
+  color: var(--ink-soft);
 }
 .pd-sub {
   display: flex;
@@ -645,7 +645,7 @@ body {
   flex-wrap: wrap;
   margin-top: 4px;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--ink-soft);
 }
 .pd-section {
   margin-top: 18px;
@@ -654,7 +654,7 @@ body {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--muted);
+  color: var(--ink-soft);
   margin: 0 0 6px;
 }
 .pd-desc {
@@ -672,7 +672,7 @@ body {
   color: var(--ink);
 }
 .pd-details dt {
-  color: var(--muted);
+  color: var(--ink-soft);
 }
 .pd-details dd {
   margin: 0;
@@ -692,9 +692,9 @@ body {
 .pd-picker {
   margin-top: 14px;
   padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: var(--card-radius);
+  background: var(--surface-deep);
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -703,7 +703,7 @@ body {
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--muted);
+  color: var(--ink-soft);
 }
 .pd-picker-item {
   text-align: left;
