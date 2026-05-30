@@ -81,11 +81,64 @@ export type ColorBucket = 1 | 2 | 3 | 4 | 5;
  * archive entries follow "Sinsal / Border (N)" or "Nafnoof Border" patterns.
  */
 const BORDER_PATTERNS = /border|sinsal|haashia|dayer|سنسال|حاشية|داير/i;
-export function isBorderPattern(p: Pattern): boolean {
+export function isBorderPatternByName(p: Pattern): boolean {
   const haystack = [p.name, p.nameAr, p.source?.originalName, p.source?.arabicName]
     .filter(Boolean)
     .join(' ');
   return BORDER_PATTERNS.test(haystack);
+}
+
+/**
+ * Stronger check: structural border eligibility. Returns true if the
+ * pattern is usable as a continuous border, by any of these criteria —
+ *
+ *   1. The name says so (Sinsal, Nafnoof Border, Dayer Qabbeh, etc.).
+ *   2. There's a continuous spine — a row or column with ≥80% painted cells
+ *      running the long axis. Tiles like Sarwa (cypress tree with a central
+ *      trunk) qualify here even though their name doesn't say "border."
+ *   3. The pattern decomposes to a smaller period along its long axis —
+ *      i.e., its own data contains visible repetition (Coffee Bean and
+ *      similar small rhythmic motifs).
+ *
+ * Anything ≥10 cells on the short axis is excluded as too "blocky" to read
+ * as a border line.
+ */
+export function isBorderPattern(p: Pattern): boolean {
+  if (isBorderPatternByName(p)) return true;
+  // Name aside, structural cues.
+  const w = p.width;
+  const h = p.height;
+  // Strip-like aspect; we look at the *long axis* for the spine.
+  const longIsH = h >= w;
+  const longLen = longIsH ? h : w;
+  const shortLen = longIsH ? w : h;
+  // Allow up to ~15 short-axis cells to call it a border-eligible strip.
+  if (shortLen > 15) return false;
+  // Continuous spine: any row (when long axis = w) or column (long axis = h)
+  // with ≥80% painted cells along the long axis is a "spine."
+  const SPINE_FRACTION = 0.8;
+  const threshold = Math.ceil(longLen * SPINE_FRACTION);
+  if (longIsH) {
+    // Look for a column where ≥threshold of the rows have a painted cell.
+    for (let x = 0; x < w; x++) {
+      let count = 0;
+      for (let y = 0; y < h; y++) {
+        if ((p.cells[y]?.[x] ?? 0) > 0) count++;
+      }
+      if (count >= threshold) return true;
+    }
+  } else {
+    // Look for a row.
+    for (let y = 0; y < h; y++) {
+      let count = 0;
+      const row = p.cells[y] ?? [];
+      for (let x = 0; x < w; x++) {
+        if (row[x] > 0) count++;
+      }
+      if (count >= threshold) return true;
+    }
+  }
+  return false;
 }
 
 export function sizeBucket(p: Pattern): SizeBucket {
