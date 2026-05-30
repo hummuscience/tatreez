@@ -179,6 +179,141 @@ export function trimCells(cells: ColorIndex[][]): ColorIndex[][] {
   return out;
 }
 
+/**
+ * Border decomposition: a pattern split into an optional left cap, the
+ * smallest horizontally-repeating unit (the "period"), and an optional
+ * right cap. Tiling the period N times between the caps reproduces the
+ * pattern. When no caps are needed, `leftCap.length === 0` and likewise
+ * for `rightCap`.
+ *
+ * For a pattern with no detectable period (the rare irregular border),
+ * `period` is the whole pattern and both caps are empty.
+ */
+export interface BorderDecomposition {
+  leftCap: ColorIndex[][];
+  period: ColorIndex[][];
+  rightCap: ColorIndex[][];
+}
+
+/** Are the two cell columns identical? */
+function colsEqual(a: ColorIndex[][], ax: number, b: ColorIndex[][], bx: number): boolean {
+  const h = a.length;
+  if (h !== b.length) return false;
+  for (let y = 0; y < h; y++) {
+    if (a[y][ax] !== b[y][bx]) return false;
+  }
+  return true;
+}
+
+/** Does a `width × h` slice of `cells` starting at column `start` repeat
+ * with period `p` across `len` columns? `cells[start..start+len-1]` must
+ * satisfy `col(i) === col(i + p)` for every valid `i`. */
+function isPeriodic(cells: ColorIndex[][], start: number, len: number, p: number): boolean {
+  if (p <= 0 || p > len) return false;
+  for (let i = 0; i + p < len; i++) {
+    if (!colsEqual(cells, start + i, cells, start + i + p)) return false;
+  }
+  return true;
+}
+
+/** Take columns `[start, start+len)` of `cells` as their own grid. */
+function sliceCols(cells: ColorIndex[][], start: number, len: number): ColorIndex[][] {
+  return cells.map((row) => row.slice(start, start + len));
+}
+
+/**
+ * Decompose a horizontal border pattern into [leftCap, period, rightCap].
+ *
+ * Strategy: try every (leftCap, rightCap) trim from the outside in, and for
+ * each middle slice, find the smallest period that explains every column in
+ * the slice. The first decomposition that succeeds (smallest total cap
+ * size, then smallest period) wins. This naturally handles end-capped
+ * borders ("a unique start/finish, then repeating middle") while degenerating
+ * to "no caps, smallest period" for borders that are pure repeats.
+ *
+ * If no period < total width works, returns the whole pattern as `period`
+ * with empty caps — the caller can tile that as a single unit.
+ */
+export function decomposeBorder(cells: ColorIndex[][]): BorderDecomposition {
+  const h = cells.length;
+  if (h === 0) return { leftCap: [], period: cells, rightCap: [] };
+  const w = cells[0]?.length ?? 0;
+  if (w === 0) return { leftCap: [], period: cells, rightCap: [] };
+
+  // Search outermost-in: for each total cap budget, try every split between
+  // left and right caps, then look for the smallest period that fits.
+  // Cap each side to ~40% of the width so we don't end up with caps so big
+  // they swallow the repeat.
+  const MAX_CAP = Math.floor(w * 0.4);
+  for (let capTotal = 0; capTotal <= MAX_CAP * 2; capTotal++) {
+    for (let leftCap = 0; leftCap <= Math.min(capTotal, MAX_CAP); leftCap++) {
+      const rightCap = capTotal - leftCap;
+      if (rightCap > MAX_CAP) continue;
+      const middleLen = w - leftCap - rightCap;
+      if (middleLen < 2) continue;
+      // Smallest period candidate: the first period length where every
+      // column in the middle slice repeats it. p must divide middleLen for
+      // a clean repeat (otherwise we'd cut a tile in half at the cap edge).
+      for (let p = 1; p <= middleLen / 2; p++) {
+        if (middleLen % p !== 0) continue;
+        if (isPeriodic(cells, leftCap, middleLen, p)) {
+          return {
+            leftCap: leftCap > 0 ? sliceCols(cells, 0, leftCap) : [],
+            period: sliceCols(cells, leftCap, p),
+            rightCap: rightCap > 0 ? sliceCols(cells, leftCap + middleLen, rightCap) : [],
+          };
+        }
+      }
+    }
+  }
+  // No clean period at any cap budget — return the whole thing as one tile.
+  return { leftCap: [], period: cells, rightCap: [] };
+}
+
+/**
+ * Compose a tiled border `length` cells wide from a decomposition: left
+ * cap, then as many full periods as fit, then a partial period to reach
+ * `length - rightCap.width` (clipped), then the right cap. The output is
+ * always exactly `length` columns wide. If the caller wants extra-clean
+ * borders that only contain whole periods, they can clamp `length` to
+ * a multiple of the period width on their side.
+ */
+export function composeBorder(
+  decomp: BorderDecomposition,
+  length: number,
+): ColorIndex[][] {
+  const h = decomp.period.length;
+  if (h === 0 || length <= 0) return [];
+  const out: ColorIndex[][] = Array.from({ length: h }, () => new Array<ColorIndex>(length).fill(0));
+  const paint = (src: ColorIndex[][], destX: number) => {
+    const sw = src[0]?.length ?? 0;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < sw; x++) {
+        const dx = destX + x;
+        if (dx < 0 || dx >= length) continue;
+        out[y][dx] = src[y][x];
+      }
+    }
+  };
+  const leftW = decomp.leftCap[0]?.length ?? 0;
+  const rightW = decomp.rightCap[0]?.length ?? 0;
+  const periodW = decomp.period[0]?.length ?? 1;
+  paint(decomp.leftCap, 0);
+  // Tile the period between the two caps. We may cut the last period
+  // mid-tile to stop right where the right cap begins.
+  const tileStart = leftW;
+  const tileEnd = length - rightW;
+  if (tileEnd > tileStart) {
+    for (let x = tileStart; x < tileEnd; x += periodW) {
+      paint(decomp.period, x);
+    }
+  }
+  // The right cap lands on top, clipping any spillover from a partial last
+  // period (so the cap always appears whole at the edge).
+  paint(decomp.rightCap, length - rightW);
+  return out;
+}
+
 export interface RepeatFit {
   /** Whole copies that fit across (x) and down (y). */
   cols: number;
