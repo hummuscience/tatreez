@@ -9,6 +9,10 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
+/* `.tt` uses `min-height: 100%`, so its chain of ancestors needs explicit
+   height — without this, iPad Safari resolves the chain to 0 and the page
+   looks empty even when React has mounted correctly. */
+html, body, #root { height: 100%; }
 body {
   font-family: 'Inter', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
