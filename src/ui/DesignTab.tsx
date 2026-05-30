@@ -1372,8 +1372,12 @@ function DesignComposer({
             void mh;
             onChange({ ...design, palette: merged.palette, areas: [...design.areas, area] });
             selectOne(area.id);
-            // Leave borderMode on so the user can lay several borders in a
-            // row; they can turn it off explicitly when done.
+            // Disarm the placed motif: re-arming is a one-tap action, but
+            // leaving the arm sticky after a successful placement caused
+            // double-placements when the user moved on to the next gesture.
+            // Border mode itself stays on so the user can re-arm another
+            // border without flipping the chip.
+            setArmedKey(null);
             draw();
             return;
           }
