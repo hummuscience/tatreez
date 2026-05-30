@@ -889,7 +889,7 @@ function DesignComposer({
     // EXCEPT in Border mode — there a "tap" is just the start of a drag the
     // user will extend to define the border length. We defer to the marquee
     // path, which sees the full drag at pointerup and tiles accordingly.
-    if (armedKeyRef.current && !borderMode) {
+    if (armedKeyRef.current && !borderModeRef.current) {
       placeArmedMotif(e.clientX, e.clientY);
       return;
     }
@@ -1038,7 +1038,12 @@ function DesignComposer({
       const y = Math.min(it.y0, it.y1);
       const w = Math.abs(it.x1 - it.x0) + 1;
       const h = Math.abs(it.y1 - it.y0) + 1;
-      if (w < 2 && h < 2) {
+      // A click (no drag) in plain marquee mode clears the preview and bails.
+      // In Border mode with an armed motif we DON'T bail — even a tap should
+      // lay down at least one repeat of the border, so the user sees the tile
+      // appear under their finger and knows the gesture worked. The
+      // composeBorder call always produces ≥ 1 period.
+      if (w < 2 && h < 2 && !(borderModeRef.current && armedKeyRef.current)) {
         draw(); // a click, not a drag — clear preview
         return;
       }
@@ -1047,7 +1052,7 @@ function DesignComposer({
       // as a repeat so the user can still edit/move it like any other area.
       // Vertical drags rotate the motif 90° so the pattern reads along the
       // line. Falls through to the normal marquee logic if not armed.
-      if (borderMode && armedKeyRef.current) {
+      if (borderModeRef.current && armedKeyRef.current) {
         const entry = library.find((l) => l.key === armedKeyRef.current);
         if (entry) {
           const merged = mergePalette(design.palette, patternPalette(entry.pattern));
@@ -1251,6 +1256,11 @@ function DesignComposer({
   const [armedKey, setArmedKey] = useState<string | null>(null);
   const armedKeyRef = useRef<string | null>(null);
   useEffect(() => { armedKeyRef.current = armedKey; }, [armedKey]);
+  // borderMode is read from pointer handlers that may be looking at a stale
+  // render's closure (state set inside a setter updater can lag a click
+  // away). The ref always carries the latest value.
+  const borderModeRef = useRef(false);
+  useEffect(() => { borderModeRef.current = borderMode; }, [borderMode]);
 
   const armMotif = (key: string) => {
     setArmedKey((cur) => {
