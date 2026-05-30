@@ -897,17 +897,30 @@ function DesignComposer({
         draw(); // a click, not a drag — clear preview
         return;
       }
+      // An empty area is just a "place a motif here later" marker — having
+      // several of them on the canvas at once is noise. Sweep the previous
+      // empty area(s) so each new mark replaces them. Areas that already
+      // hold a motif or a repeat are kept.
+      const isEmpty = (a: Area) => a.motifs.length === 0 && !a.repeat;
+      const kept = design.areas.filter((a) => !isEmpty(a));
       const area: Area = {
         id: newId('area'),
-        name: `area ${design.areas.length + 1}`,
+        name: `area ${kept.length + 1}`,
         x,
         y,
         w,
         h,
         motifs: [],
       };
-      onChange({ ...design, areas: [...design.areas, area] });
-      selectOne(area.id);
+      onChange({ ...design, areas: [...kept, area] });
+      // Clear any stale selection/active pointer to a swept area.
+      setSelectedIds((cur) => {
+        const next = new Set<string>();
+        for (const id of cur) if (kept.some((a) => a.id === id)) next.add(id);
+        next.add(area.id);
+        return next;
+      });
+      setActiveAreaId(area.id);
     }
   };
 
