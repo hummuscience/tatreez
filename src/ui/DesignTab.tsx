@@ -496,7 +496,13 @@ function DesignComposer({
   type Interaction =
     | { kind: 'move'; areaId: string; offX: number; offY: number }
     | { kind: 'rotate'; cx: number; cy: number; angle: number }
-    | { kind: 'marquee'; mode: 'mark' | 'select'; x0: number; y0: number; x1: number; y1: number };
+    | { kind: 'marquee'; mode: 'mark' | 'select'; x0: number; y0: number; x1: number; y1: number }
+    // Resize a border by dragging one of its tiling-axis ends. `axis` is the
+    // tiling axis (the long side). `edge` is whether we grabbed the leading
+    // (left/top) or trailing (right/bottom) end. `anchor` is the cell coord
+    // of the *fixed* (non-grabbed) end, so the new length is just
+    // distance from the anchor to the current pointer.
+    | { kind: 'resizeBorder'; areaId: string; axis: 'h' | 'v'; edge: 'lead' | 'trail'; anchor: number };
   const interactionRef = useRef<Interaction | null>(null);
 
   // Canvas fills the residual column width; height follows the cloth aspect
@@ -859,6 +865,98 @@ function DesignComposer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedIds, design]);
 
+  // Re-tile a border area to a new tiling-axis length, anchored at one end.
+  // Decomposes the existing baked strip back into period+caps and rebuilds a
+  // strip of the requested length. Returns the new area; clamped so the
+  // anchored end stays put and the moving end stays on-grid.
+  const retileBorder = (
+    a: Area,
+    axis: 'h' | 'v',
+    edge: 'lead' | 'trail',
+    anchor: number,
+    pointerCell: number,
+  ): Area => {
+    const motif = a.motifs[0];
+    if (!motif) return a;
+    // For a vertical border, decompose along the rotated horizontal axis
+    // (same as creation logic). composeBorder produces a horizontal strip,
+    // which we rotate back for vertical borders.
+    const cells = axis === 'h' ? motif.cells : rotateTurns(motif.cells, 1);
+    const decomp = decomposeBorder(cells);
+    const periodW = decomp.period[0]?.length ?? 1;
+    const leftCapW = decomp.leftCap[0]?.length ?? 0;
+    const rightCapW = decomp.rightCap[0]?.length ?? 0;
+
+    // Total length the pointer is asking for (inclusive of both endpoints).
+    let askedLen = Math.abs(pointerCell - anchor) + 1;
+    // Snap to whole periods between the caps so the right cap aligns.
+    const innerLen = Math.max(periodW, askedLen - leftCapW - rightCapW);
+    const periods = Math.max(1, Math.round(innerLen / periodW));
+    const newLen = leftCapW + periods * periodW + rightCapW;
+
+    let stripCells = composeBorder(decomp, newLen);
+    if (axis === 'v') stripCells = rotateTurns(stripCells, 3);
+    const sh = stripCells.length;
+    const sw = sh > 0 ? stripCells[0].length : 1;
+
+    // Anchor the area at the fixed end. For 'lead' (we grabbed the left/top),
+    // the trailing end stays put; the leading edge moves with the pointer.
+    let newX = a.x;
+    let newY = a.y;
+    if (axis === 'h') {
+      if (edge === 'lead') newX = anchor - sw + 1;
+      else newX = anchor;
+      newX = Math.max(0, Math.min(newX, design.gridW - sw));
+    } else {
+      if (edge === 'lead') newY = anchor - sh + 1;
+      else newY = anchor;
+      newY = Math.max(0, Math.min(newY, design.gridH - sh));
+    }
+    return { ...a, x: newX, y: newY, w: sw, h: sh, motifs: [{ ...motif, cells: stripCells, x: 0, y: 0 }] };
+  };
+
+  // Identify a border area: created by the Border tool, which sets the name
+  // prefix and stores exactly one baked motif. The tiling axis is the long
+  // side of that motif (which is also the area's bbox). For resize hit-tests
+  // we treat any area starting with "border " as a border.
+  const isBorderArea = (a: Area): { axis: 'h' | 'v' } | null => {
+    if (!a.name.startsWith('border ')) return null;
+    if (a.motifs.length !== 1 || a.repeat) return null;
+    return { axis: a.w >= a.h ? 'h' : 'v' };
+  };
+
+  // How close to a border's leading/trailing end the pointer must be to grab
+  // it for resize, in cell units. Generous on touch.
+  const BORDER_GRAB_CELLS = 2;
+
+  // Try to find a border end the pointer is on. Returns the area + which end.
+  const borderEndAt = (cx: number, cy: number): { area: Area; axis: 'h' | 'v'; edge: 'lead' | 'trail'; anchor: number } | null => {
+    for (const a of design.areas) {
+      const meta = isBorderArea(a);
+      if (!meta) continue;
+      if (meta.axis === 'h') {
+        // Must be inside the strip's height band.
+        if (cy < a.y || cy >= a.y + a.h) continue;
+        if (Math.abs(cx - a.x) <= BORDER_GRAB_CELLS) {
+          // Grabbed the left edge: anchor is the right edge cell.
+          return { area: a, axis: 'h', edge: 'lead', anchor: a.x + a.w - 1 };
+        }
+        if (Math.abs(cx - (a.x + a.w - 1)) <= BORDER_GRAB_CELLS) {
+          return { area: a, axis: 'h', edge: 'trail', anchor: a.x };
+        }
+      } else {
+        if (cx < a.x || cx >= a.x + a.w) continue;
+        if (Math.abs(cy - a.y) <= BORDER_GRAB_CELLS) {
+          return { area: a, axis: 'v', edge: 'lead', anchor: a.y + a.h - 1 };
+        }
+        if (Math.abs(cy - (a.y + a.h - 1)) <= BORDER_GRAB_CELLS) {
+          return { area: a, axis: 'v', edge: 'trail', anchor: a.y };
+        }
+      }
+    }
+    return null;
+  };
+
   // Delete one area; skip the confirm for an empty (motif-less) area.
   const deleteArea = (a: Area) => {
     const isEmpty = a.motifs.length === 0 && !a.repeat;
@@ -927,6 +1025,25 @@ function DesignComposer({
     }
 
     const [cx, cy] = cellAt(e.clientX, e.clientY);
+
+    // Border-edge grab takes priority over the body-hit "move area" path.
+    // A drag near the leading/trailing end of a border resizes it along the
+    // tiling axis; the rest of the body still moves the whole area.
+    const grabEnd = borderEndAt(cx, cy);
+    if (grabEnd && !additive) {
+      // Select just this border so the inspector reflects what's being edited.
+      if (!selectedIds.has(grabEnd.area.id)) selectOne(grabEnd.area.id);
+      else setActiveAreaId(grabEnd.area.id);
+      interactionRef.current = {
+        kind: 'resizeBorder',
+        areaId: grabEnd.area.id,
+        axis: grabEnd.axis,
+        edge: grabEnd.edge,
+        anchor: grabEnd.anchor,
+      };
+      return;
+    }
+
     const hit = areaAt(cx, cy);
     if (hit) {
       if (additive) {
@@ -989,6 +1106,17 @@ function DesignComposer({
       const [cx, cy] = cellAt(e.clientX, e.clientY);
       interactionRef.current = { ...it, x1: cx, y1: cy };
       draw();
+    } else if (it.kind === 'resizeBorder') {
+      const [cx, cy] = cellAt(e.clientX, e.clientY);
+      const grabbed = design.areas.find((a) => a.id === it.areaId);
+      if (!grabbed) return;
+      const pointerCell = it.axis === 'h' ? cx : cy;
+      const next = retileBorder(grabbed, it.axis, it.edge, it.anchor, pointerCell);
+      if (next.w === grabbed.w && next.h === grabbed.h && next.x === grabbed.x && next.y === grabbed.y) return;
+      onChange({
+        ...design,
+        areas: design.areas.map((a) => (a.id === grabbed.id ? next : a)),
+      });
     } else {
       // rotate: angle from group centre to pointer; Alt snaps to 90° live.
       const [px, py] = pointerPx(e.clientX, e.clientY);
