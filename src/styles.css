@@ -411,6 +411,26 @@ body {
 .design-body-l-no-inspector { grid-template-columns: 124px minmax(0, 1fr); }
 .design-body-l-no-patterns.design-body-l-no-inspector { grid-template-columns: minmax(0, 1fr); }
 .design-view-toggles { display: flex; gap: 6px; align-items: center; }
+/* Top toolbar for view toggles — sits between the cloth bar and the
+   filter row so the buttons stay reachable regardless of how tall the
+   canvas grows on tablet/portrait. */
+.design-view-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--card-radius);
+  padding: 8px 14px;
+  background: var(--surface);
+}
+.design-view-bar-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+  margin-right: 4px;
+}
 /* Toggle chips need to read as buttons even in their "off" state, so the
    user sees that they're tappable when the corresponding panel is hidden.
    Off = bold accent outline + accent text. On = filled (uses .chip-active). */

@@ -1161,6 +1161,32 @@ function DesignComposer({
       {/* Top: cloth + size + strands — the first choice, full width */}
       <ClothBar design={design} onChange={onChange} onClose={onClose} />
 
+      {/* View toolbar: always-visible toggles for the two side panels.
+          Lives above the canvas so a tap target is reachable even when the
+          canvas is tall enough to push the foot off-screen (the previous
+          home for these buttons). */}
+      <div className="design-view-bar" role="group" aria-label="Panels">
+        <span className="design-view-bar-label">View</span>
+        <button
+          type="button"
+          className={`chip chip-toggle${showPatterns ? ' chip-active' : ''}`}
+          aria-pressed={showPatterns}
+          onClick={() => setShowPatterns((v) => !v)}
+          title={showPatterns ? 'Hide pattern library' : 'Show pattern library'}
+        >
+          {showPatterns ? 'Patterns ✓' : '+ Patterns'}
+        </button>
+        <button
+          type="button"
+          className={`chip chip-toggle${showInspector ? ' chip-active' : ''}`}
+          aria-pressed={showInspector}
+          onClick={() => setShowInspector((v) => !v)}
+          title={showInspector ? 'Hide inspector' : 'Show inspector'}
+        >
+          {showInspector ? 'Inspector ✓' : '+ Inspector'}
+        </button>
+      </div>
+
       {/* Filter row: search + compact dropdowns, one line. Hidden when the
           Patterns library is off — without library cards there's nothing
           to filter. */}
@@ -1311,29 +1337,6 @@ function DesignComposer({
               </button>
               <button type="button" className="chip" onClick={() => setZoom(1)} title="Fit width">
                 Fit
-              </button>
-            </div>
-            {/* View toggles: collapse either side to widen the canvas. Each
-                button is on when the panel is visible (pressed-look) and off
-                when hidden — same colour cue as a tab. */}
-            <div className="design-view-toggles" role="group" aria-label="Panels">
-              <button
-                type="button"
-                className={`chip chip-toggle${showPatterns ? ' chip-active' : ''}`}
-                aria-pressed={showPatterns}
-                onClick={() => setShowPatterns((v) => !v)}
-                title={showPatterns ? 'Hide pattern library' : 'Show pattern library'}
-              >
-                {showPatterns ? 'Patterns ✓' : '+ Patterns'}
-              </button>
-              <button
-                type="button"
-                className={`chip chip-toggle${showInspector ? ' chip-active' : ''}`}
-                aria-pressed={showInspector}
-                onClick={() => setShowInspector((v) => !v)}
-                title={showInspector ? 'Hide inspector' : 'Show inspector'}
-              >
-                {showInspector ? 'Inspector ✓' : '+ Inspector'}
               </button>
             </div>
             <p className="design-canvas-hint">
