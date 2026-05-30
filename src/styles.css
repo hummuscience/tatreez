@@ -107,6 +107,22 @@ body {
 .panel-h { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 12px; margin-bottom: 14px; border-bottom: 1px solid var(--rule); }
 .panel-h > span:first-child { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink); }
 .panel-h > span:last-child { font-family: var(--font-arabic); font-size: 12px; color: var(--ink-soft); }
+/* Right side of the panel header when it carries extra controls (e.g. the
+   ? help toggle on the area inspector). */
+.panel-h-right { display: inline-flex; align-items: center; gap: 8px; }
+.help-toggle {
+  width: 20px; height: 20px;
+  display: inline-grid; place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--rule-strong);
+  background: var(--surface);
+  color: var(--ink-soft);
+  font: 600 11px/1 var(--font-mono);
+  cursor: pointer;
+  padding: 0;
+}
+.help-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.help-toggle-on { background: var(--accent); color: var(--surface); border-color: var(--accent); }
 
 .chip { padding: 4px 11px; border-radius: var(--chip-radius); border: 1px solid var(--rule); background: var(--surface); color: var(--ink); cursor: pointer; font: inherit; font-size: 12px; transition: 100ms; }
 .chip:hover { border-color: var(--rule-strong); }

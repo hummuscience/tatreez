@@ -1635,17 +1635,33 @@ function AreaInspector({
   onRecolor: (oldIndex: number, color: PaletteColor) => void;
   updateArea: (id: string, fn: (a: Area) => Area) => void;
 } & AreaActions) {
+  const [helpOpen, setHelpOpen] = useState(false);
   return (
     <section className="panel">
       <div className="panel-h">
         <span>{selectedCount > 1 ? `${selectedCount} areas` : 'Area'}</span>
-        <span dir="rtl">المنطقة</span>
+        {/* Right side: Arabic label + tiny ? toggle for the usage hint.
+            Wrapped together so .panel-h's space-between layout still works. */}
+        <span className="panel-h-right">
+          <span dir="rtl">المنطقة</span>
+          <button
+            type="button"
+            className={`help-toggle${helpOpen ? ' help-toggle-on' : ''}`}
+            aria-pressed={helpOpen}
+            aria-label="How to use areas"
+            title="How to use areas"
+            onClick={() => setHelpOpen((v) => !v)}
+          >
+            ?
+          </button>
+        </span>
       </div>
-      {!area ? (
+      {helpOpen && (
         <p className="empty-hint">
-          Drop a pattern on the canvas, then click it. Shift-click or drag a box to select several.
+          Drop or tap a pattern on the canvas, then click it. Shift-click or drag a box to select several.
         </p>
-      ) : (
+      )}
+      {area && (
         <AreaPanel
           area={area}
           multi={selectedCount > 1}
