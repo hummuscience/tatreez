@@ -362,10 +362,14 @@ body {
 .field > span { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-soft); }
 .field input, .field select { font: inherit; padding: 6px 10px; border: 1px solid var(--rule); border-radius: var(--input-radius); background: var(--surface-deep); color: var(--ink); font-size: 13px; }
 
-/* design list / new */
+/* design list / new
+   `auto-fit` makes the row wrap at every breakpoint so we never overflow
+   the iPad's portrait width; on wide screens it still lays out in a single
+   row because each field caps near `minmax(170px, 1fr)`. */
 .design-list { display: flex; flex-direction: column; gap: 18px; }
-.design-new { display: grid; grid-template-columns: 2fr 1.4fr 1fr 1fr auto auto; gap: 12px; align-items: end; }
-.design-new-meta { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); white-space: nowrap; }
+.design-new { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; align-items: end; }
+.design-new > .design-new-meta, .design-new > .btn-primary { align-self: end; }
+.design-new-meta { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); }
 .design-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .design-card { display: flex; align-items: stretch; justify-content: space-between; gap: 8px; border: 1px solid var(--rule); border-radius: var(--card-radius); padding: 12px 14px; background: var(--surface); }
 .design-card-main { flex: 1; text-align: left; background: none; border: none; cursor: pointer; font: inherit; color: var(--ink); }
@@ -441,3 +445,23 @@ body {
 .design-transform { display: flex; gap: 6px; flex-wrap: wrap; }
 .design-fit-report { font-family: var(--font-mono); font-size: 11px; color: var(--accent); }
 .design-area-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+
+/* ============================================================
+   NARROW VIEWPORTS — iPad portrait and smaller
+   ============================================================
+   The default layout is designed for laptop widths; the rules below shave
+   the outer chrome so panels stop overflowing their parent on tablets.
+   We do NOT collapse internal grids on phones (still rare for this app)
+   beyond what `auto-fit` already does. */
+@media (max-width: 900px) {
+  .tt { padding: 20px 16px 48px; }
+  .hdr { flex-wrap: wrap; gap: 12px; }
+  .hdr-meta { width: 100%; justify-content: flex-start; }
+  /* Cloth bar's inline fields look cramped on portrait — let them wrap
+     onto multiple rows instead of trying to fit one line. */
+  .design-clothbar { flex-wrap: wrap; }
+  .design-clothbar-name { margin-right: 0; flex-basis: 100%; }
+  .field-inline { min-width: 0; flex: 1 1 140px; }
+  /* Make sure no individual element forces horizontal scroll. */
+  body, .tt { overflow-x: hidden; }
+}
