@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { ErrorBoundary } from './ui/ErrorBoundary';
 import './styles.css';
 
 // Surface any startup crash on the page itself — without this, a thrown
@@ -10,10 +11,16 @@ import './styles.css';
 // user can read it and screenshot it for us.
 function showFatal(stage: string, err: unknown): void {
   const root = document.getElementById('root');
+  // Safari sometimes hands us a string "Script error." instead of the real
+  // Error; if we have nothing useful, surface that too so the user knows.
+  const e: unknown =
+    err && typeof err === 'object' && 'error' in (err as Record<string, unknown>)
+      ? (err as { error: unknown }).error
+      : err;
   const msg =
-    err instanceof Error
-      ? `${err.name}: ${err.message}\n\n${err.stack ?? ''}`
-      : String(err);
+    e instanceof Error
+      ? `${e.name}: ${e.message}\n\n${e.stack ?? ''}`
+      : String(e ?? err);
   const safe = msg.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]!));
   const ua = navigator.userAgent;
   const block = `
@@ -27,8 +34,11 @@ function showFatal(stage: string, err: unknown): void {
   else document.body.insertAdjacentHTML('beforeend', block);
 }
 
-// Catch errors that escape React's render path (module init, async tasks).
-window.addEventListener('error', (e) => showFatal('window.error', e.error ?? e.message));
+// Catch errors that escape React (module init, async tasks). Errors *inside*
+// React's tree are caught by ErrorBoundary below — that one gets the real
+// message even on Safari, where window.onerror is often censored to
+// "Script error." for handler-thrown exceptions.
+window.addEventListener('error', (e) => showFatal('window.error', e));
 window.addEventListener('unhandledrejection', (e) => showFatal('promise', e.reason));
 
 try {
@@ -36,7 +46,9 @@ try {
   if (!host) throw new Error('#root element missing in index.html');
   ReactDOM.createRoot(host).render(
     <React.StrictMode>
-      <App />
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
     </React.StrictMode>,
   );
 } catch (err) {
