@@ -1168,7 +1168,20 @@ function DesignComposer({
   useEffect(() => { armedKeyRef.current = armedKey; }, [armedKey]);
 
   const armMotif = (key: string) => {
-    setArmedKey((cur) => (cur === key ? null : key));
+    setArmedKey((cur) => {
+      const next = cur === key ? null : key;
+      // Auto-enable border mode when the user arms a pattern whose name
+      // reads as a border (Sinsal / Nafnoof Border / Dayer Qabbeh / etc.);
+      // disarm it when the armed key clears or switches to a non-border.
+      // The user can still toggle the + Border chip manually to override.
+      if (next === null) {
+        setBorderMode(false);
+      } else {
+        const entry = library.find((l) => l.key === next);
+        setBorderMode(entry ? isBorderPattern(entry.pattern) : false);
+      }
+      return next;
+    });
   };
 
   const placeArmedMotif = (clientX: number, clientY: number) => {
