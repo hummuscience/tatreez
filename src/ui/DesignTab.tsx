@@ -389,9 +389,15 @@ function DesignComposer({
   // an existing area's motif OR create a new tiny "freehand" area on empty
   // canvas (pen only). Mutually exclusive with border mode and with each
   // other.
-  type Tool = 'select' | 'pen' | 'eraser';
-  const [tool, setTool] = useState<Tool>('select');
-  const toolRef = useRef<Tool>('select');
+  // `none` is the "do nothing" baseline: no marquee, no area-move, no
+  // create-empty-area. Only the rotate handle and the border-end grab still
+  // fire (those have explicit visual targets, can't be triggered by a stray
+  // touch). This makes pinch-zoom on iPad safe — a stray one-finger drag
+  // during a pinch can't create a ghost area, because the canvas body
+  // ignores it. The user enters Select mode explicitly to manipulate areas.
+  type Tool = 'none' | 'select' | 'pen' | 'eraser';
+  const [tool, setTool] = useState<Tool>('none');
+  const toolRef = useRef<Tool>('none');
   useEffect(() => { toolRef.current = tool; }, [tool]);
   // Pen color: defaults to the design's first non-empty palette colour, or
   // a soft red if the palette is empty. Persisted across strokes.
@@ -1168,6 +1174,15 @@ function DesignComposer({
       return;
     }
 
+    // Without the explicit Select tool we treat the canvas as inert here:
+    // no body-hit area-move, no marquee-mark, no rubber-band selection. The
+    // user must tap "Select" first. This makes iPad pinch-zoom safe — the
+    // start of a pinch can no longer create a stray empty area through the
+    // marquee path. Exception: Border mode with an armed motif still needs
+    // a marquee drag to define the strip length, so we allow that.
+    const borderDrawArmed = borderModeRef.current && armedKeyRef.current;
+    if (toolRef.current !== 'select' && !borderDrawArmed) return;
+
     const hit = areaAt(cx, cy);
     if (hit) {
       if (additive) {
@@ -1714,6 +1729,10 @@ function DesignComposer({
     if (!key) return;
     placeMotifAt(key, clientX, clientY);
     setArmedKey(null);
+    // After placement the user typically wants to nudge / rotate the new
+    // area; switch into Select so the next tap selects it instead of
+    // landing on the inert default.
+    setTool('select');
   };
 
   // ----- pinch-to-zoom on the canvas ------------------------------------------
@@ -1978,10 +1997,10 @@ function DesignComposer({
         type="button"
         className={`chip chip-toggle${tool === 'select' && !borderMode ? ' chip-active' : ''}`}
         aria-pressed={tool === 'select' && !borderMode}
-        onClick={() => switchTool('select')}
-        title="Select / move (default)"
+        onClick={() => switchTool(tool === 'select' ? 'none' : 'select')}
+        title="Select / move areas"
       >
-        ✥
+        ✥ Select
       </button>
       <button
         type="button"
