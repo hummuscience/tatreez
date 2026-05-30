@@ -74,6 +74,20 @@ export type SizeBucket = 'small' | 'medium' | 'large';
 export type ComplexityBucket = 'simple' | 'medium' | 'complex';
 export type ColorBucket = 1 | 2 | 3 | 4 | 5;
 
+/**
+ * Heuristic: is this pattern a border? Matches names that mention "border"
+ * (English), "sinsal"/"haashia"/"dayer" (Palestinian border terms), or the
+ * Arabic ٍسنسال / حاشية / داير. Source-of-truth is name text — many tirazain
+ * archive entries follow "Sinsal / Border (N)" or "Nafnoof Border" patterns.
+ */
+const BORDER_PATTERNS = /border|sinsal|haashia|dayer|سنسال|حاشية|داير/i;
+export function isBorderPattern(p: Pattern): boolean {
+  const haystack = [p.name, p.nameAr, p.source?.originalName, p.source?.arabicName]
+    .filter(Boolean)
+    .join(' ');
+  return BORDER_PATTERNS.test(haystack);
+}
+
 export function sizeBucket(p: Pattern): SizeBucket {
   const m = Math.max(p.width, p.height);
   if (m <= 30) return 'small';

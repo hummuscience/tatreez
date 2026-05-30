@@ -52,6 +52,7 @@ import {
   SIZE_FILTERS,
   colorCount,
   complexityBucket,
+  isBorderPattern,
   matchesQuery,
   paintedCells,
   paintedSize,
@@ -317,6 +318,13 @@ function DesignComposer({
   const [fColors, setFColors] = useState<ColorBucket | null>(null);
   const [fSize, setFSize] = useState<SizeBucket | null>(null);
   const [fComplexity, setFComplexity] = useState<ComplexityBucket | null>(null);
+  // "Border" library filter: shows only patterns whose name reads as a
+  // border (Sinsal, Nafnoof Border, Dayer Qabbeh, etc.). Derived from name
+  // text — no curation needed.
+  const [bordersOnly, setBordersOnly] = useState(false);
+  // Border-draw tool: when on, dragging on the canvas tiles the armed motif
+  // along the drag axis instead of marking a filter area.
+  const [borderMode, setBorderMode] = useState(false);
   // View toggles. Hiding either side widens the canvas (the grid template
   // collapses the dropped column). Persisted so the user's preferred
   // working surface survives a refresh.
@@ -913,6 +921,49 @@ function DesignComposer({
         draw(); // a click, not a drag — clear preview
         return;
       }
+      // Border tool: tile the armed motif along the dominant drag axis.
+      // The result is a thin area sized to the motif (h) × span (w), filled
+      // as a repeat so the user can still edit/move it like any other area.
+      // Vertical drags rotate the motif 90° so the pattern reads along the
+      // line. Falls through to the normal marquee logic if not armed.
+      if (borderMode && armedKeyRef.current) {
+        const entry = library.find((l) => l.key === armedKeyRef.current);
+        if (entry) {
+          const merged = mergePalette(design.palette, patternPalette(entry.pattern));
+          const baseCells = trimCells(remapCells(entry.pattern.cells, merged.indexMap));
+          const horizontal = w >= h;
+          const cells = horizontal ? baseCells : rotateTurns(baseCells, 1);
+          const mh = cells.length;
+          const mw = mh > 0 ? cells[0].length : 1;
+          // Border area spans the drag along the dominant axis and is one
+          // motif tall (or wide) on the other axis. Anchored at start cell.
+          const ax = horizontal ? x : Math.min(it.x0, it.x1);
+          const ay = horizontal ? Math.min(it.y0, it.y1) : y;
+          const aw = horizontal ? Math.min(w, design.gridW - ax) : Math.min(mw, design.gridW - ax);
+          const ah = horizontal ? Math.min(mh, design.gridH - ay) : Math.min(h, design.gridH - ay);
+          if (aw > 0 && ah > 0) {
+            const area: Area = {
+              id: newId('area'),
+              name: `border ${design.areas.length + 1}`,
+              x: ax,
+              y: ay,
+              w: aw,
+              h: ah,
+              motifs: [],
+              // `horizontal` caps to 1 row of tiles (right for a horizontal
+              // strip); `grid` tiles both directions (vertical strip = many
+              // rows × 1 col since area width equals motif width).
+              repeat: { mode: horizontal ? 'horizontal' : 'grid', patternKey: armedKeyRef.current, cells },
+            };
+            onChange({ ...design, palette: merged.palette, areas: [...design.areas, area] });
+            selectOne(area.id);
+            // Leave borderMode on so the user can lay several borders in a
+            // row; they can turn it off explicitly when done.
+            draw();
+            return;
+          }
+        }
+      }
       const isEmpty = (a: Area) => a.motifs.length === 0 && !a.repeat;
       // Areas fully enclosed by the dragged rectangle (concrete ones — empty
       // markers don't count, they'd be swept anyway).
@@ -1149,6 +1200,7 @@ function DesignComposer({
     }
     if (fSize && sizeBucket(p) !== fSize) return false;
     if (fComplexity && complexityBucket(paintedCells(p)) !== fComplexity) return false;
+    if (bordersOnly && !isBorderPattern(p)) return false;
     if (fitsActive && activeArea) {
       // Compare against the painted bounding box (fitW/fitH) — what the motif
       // actually occupies once placed (placement trims blank margins) — not
@@ -1169,7 +1221,8 @@ function DesignComposer({
     fColors !== null ||
     fSize !== null ||
     fComplexity !== null ||
-    fitOnly;
+    fitOnly ||
+    bordersOnly;
 
   const clearFilters = () => {
     setQuery('');
@@ -1178,6 +1231,7 @@ function DesignComposer({
     setFSize(null);
     setFComplexity(null);
     setFitOnly(false);
+    setBordersOnly(false);
   };
 
   // Split the capped results between the L's two arms: a left column and a
@@ -1310,6 +1364,15 @@ function DesignComposer({
           Fits area{activeArea ? ` (≲ ${activeArea.w + FIT_TOLERANCE}×${activeArea.h + FIT_TOLERANCE})` : ''}
         </label>
 
+        <label className="design-fit-toggle" title="Filter to border patterns (sinsal, nafnoof border, etc.)">
+          <input
+            type="checkbox"
+            checked={bordersOnly}
+            onChange={(e) => setBordersOnly(e.target.checked)}
+          />
+          Borders only
+        </label>
+
         <span className="design-filter-count">
           {filteredLib.length === 0
             ? 'no matches'
@@ -1378,6 +1441,18 @@ function DesignComposer({
                 Fit
               </button>
             </div>
+            {/* Border tool: requires an armed library motif. When on, dragging
+                across the canvas tiles that motif along the drag axis. */}
+            <button
+              type="button"
+              className={`chip chip-toggle${borderMode ? ' chip-active' : ''}`}
+              aria-pressed={borderMode}
+              disabled={!armedKey}
+              onClick={() => setBorderMode((v) => !v)}
+              title={armedKey ? 'Tile the armed motif along a drag' : 'Arm a pattern first to draw a border'}
+            >
+              {borderMode ? 'Border ✓' : '+ Border'}
+            </button>
             <p className="design-canvas-hint">
               Drag on empty canvas to mark an area · drag a pattern on · drag a motif to move · handle
               rotates (Alt = snap 90°) · Shift + scroll to zoom
