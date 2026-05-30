@@ -810,3 +810,10 @@ body {
 .pd-picker-item {
   text-align: left;
 }
+
+.design-cat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}

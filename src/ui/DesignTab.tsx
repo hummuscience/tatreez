@@ -53,9 +53,11 @@ import {
   drawPatternBackground,
 } from './canvasUtil';
 import {
+  CATEGORY_FILTERS,
   COLOR_BUCKETS,
   COMPLEXITY_FILTERS,
   SIZE_FILTERS,
+  categoriesOf,
   colorCount,
   complexityBucket,
   isBorderPattern,
@@ -63,6 +65,7 @@ import {
   paintedCells,
   paintedSize,
   sizeBucket,
+  type Category,
   type ColorBucket,
   type ComplexityBucket,
   type SizeBucket,
@@ -377,6 +380,7 @@ function DesignComposer({
   // border (Sinsal, Nafnoof Border, Dayer Qabbeh, etc.). Derived from name
   // text — no curation needed.
   const [bordersOnly, setBordersOnly] = useState(false);
+  const [fCats, setFCats] = useState<Set<Category>>(new Set());
   // Border-draw tool: when on, dragging on the canvas tiles the armed motif
   // along the drag axis instead of marking a filter area.
   const [borderMode, setBorderMode] = useState(false);
@@ -1841,6 +1845,12 @@ function DesignComposer({
     if (pinchPointersRef.current.size < 2) pinchRef.current = null;
   };
 
+  const catCounts = useMemo(() => {
+    const counts = {} as Record<Category, number>;
+    for (const [key] of CATEGORY_FILTERS) counts[key] = 0;
+    for (const l of library) for (const c of categoriesOf(l.pattern)) counts[c]++;
+    return counts;
+  }, [library]);
   const filteredLib = library.filter((l) => {
     const p = l.pattern;
     if (!matchesQuery(p, query)) return false;
@@ -1852,6 +1862,10 @@ function DesignComposer({
     if (fSize && sizeBucket(p) !== fSize) return false;
     if (fComplexity && complexityBucket(paintedCells(p)) !== fComplexity) return false;
     if (bordersOnly && !isBorderPattern(p)) return false;
+    if (fCats.size > 0) {
+      const cats = categoriesOf(p);
+      if (!cats.some((c) => fCats.has(c))) return false;
+    }
     if (fitsActive && activeArea) {
       // Compare against the painted bounding box (fitW/fitH) — what the motif
       // actually occupies once placed (placement trims blank margins) — not
@@ -1873,7 +1887,7 @@ function DesignComposer({
     fSize !== null ||
     fComplexity !== null ||
     fitOnly ||
-    bordersOnly;
+    bordersOnly || fCats.size > 0;
 
   const clearFilters = () => {
     setQuery('');
@@ -1883,6 +1897,7 @@ function DesignComposer({
     setFComplexity(null);
     setFitOnly(false);
     setBordersOnly(false);
+    setFCats(new Set());
   };
 
   // Split the capped results between the L's two arms: a left column and a
@@ -2020,6 +2035,27 @@ function DesignComposer({
             aria-label="Search patterns"
           />
         </label>
+        <div className="design-cat-chips">
+          {CATEGORY_FILTERS.map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={fCats.has(key)}
+              className={`chip${fCats.has(key) ? " chip-active" : ""}`}
+              onClick={() =>
+                setFCats((cur) => {
+                  const next = new Set(cur);
+                  if (next.has(key)) next.delete(key);
+                  else next.add(key);
+                  return next;
+                })
+              }
+              title={`${catCounts[key]} motifs`}
+            >
+              {label} <span className="chip-count">{catCounts[key]}</span>
+            </button>
+          ))}
+        </div>
 
         {regions.length > 0 && (
           <select

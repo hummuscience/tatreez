@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isBorderPattern, isBorderPatternByName } from './patternFilters';
+import { isBorderPattern, isBorderPatternByName, categoriesOf, CATEGORY_RULES, CATEGORY_FILTERS } from './patternFilters';
 import type { Pattern } from '../engine/types';
 
 function pattern(name: string, cells: number[][]): Pattern {
@@ -78,5 +78,58 @@ describe('isBorderPattern (structural)', () => {
     // 16-wide, 30-tall: too thick on the short axis to read as a border line.
     const cells = Array.from({ length: 30 }, () => Array(16).fill(1));
     expect(isBorderPattern(pattern('Thick block', cells))).toBe(false);
+  });
+});
+
+// ─── categoriesOf ────────────────────────────────────────────────────────────
+
+/** Minimal pattern with just a name (classifier only reads name text fields). */
+function named(name: string, nameAr?: string): Pattern {
+  return { name, nameAr, width: 1, height: 1, cells: [[0]] };
+}
+
+describe('categoriesOf', () => {
+  it('tags a cypress tree as plants', () => {
+    expect(categoriesOf(named('Sarwa / Cypress Tree Ramallah (1)'))).toContain('plants');
+  });
+  it('tags a rooster as animals', () => {
+    expect(categoriesOf(named('deek / rooster'))).toContain('animals');
+  });
+  it('multi-tags a vase of flowers as both objects and flowers', () => {
+    const c = categoriesOf(named('mazhariya ward / vase of flowers'));
+    expect(c).toContain('objects');
+    expect(c).toContain('flowers');
+  });
+  it('tags discs as geometric', () => {
+    expect(categoriesOf(named('aqras / discs (2)'))).toContain('geometric');
+  });
+  it('tags the moon as celestial', () => {
+    expect(categoriesOf(named('qamar / moon'))).toContain('celestial');
+  });
+  it("does not tag a rooster's comb as objects (comb collision avoided)", () => {
+    const c = categoriesOf(named("urf al deek / rooster's comb"));
+    expect(c).toContain('animals');
+    expect(c).not.toContain('objects');
+  });
+  it('returns an empty array for an unrecognized name', () => {
+    expect(categoriesOf(named('eid al oum / mother\'s day'))).toEqual([]);
+  });
+  it('matches against the Arabic name field too', () => {
+    // English half blank-ish, Arabic carries the signal
+    expect(categoriesOf(named('—', 'قمر'))).toContain('celestial');
+  });
+});
+
+describe('CATEGORY_FILTERS / CATEGORY_RULES', () => {
+  it('exposes all 9 categories in display order', () => {
+    expect(CATEGORY_FILTERS.map(([k]) => k)).toEqual([
+      'plants', 'animals', 'flowers', 'celestial', 'geometric',
+      'objects', 'architecture', 'amulets', 'food',
+    ]);
+  });
+  it('has one rule per category', () => {
+    expect(CATEGORY_RULES.map((r) => r.key).sort()).toEqual(
+      CATEGORY_FILTERS.map(([k]) => k).sort(),
+    );
   });
 });
