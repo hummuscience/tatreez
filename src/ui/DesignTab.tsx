@@ -1538,73 +1538,124 @@ function ClothBar({
   onClose: () => void;
 }) {
   const cloth = getCloth(design.clothId);
+  const strands = STRAND_OPTIONS.find((s) => s.id === design.strandsId);
+  // Collapsed by default — once cloth/size/strands are picked the user mostly
+  // works with the canvas. Persisted so an intentional open survives refresh.
+  const [open, setOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem('design:clothBarOpen') === '1'; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('design:clothBarOpen', open ? '1' : '0'); } catch { /* noop */ }
+  }, [open]);
+
   return (
     <section className="design-clothbar">
       <button className="btn-ghost btn-sm" type="button" onClick={onClose}>
         ← Designs
       </button>
-      <strong className="design-clothbar-name">{design.name}</strong>
-      <label className="field field-inline">
-        <span>Cloth</span>
-        <select
-          value={design.clothId}
-          onChange={(e) => {
-            const c = getCloth(e.target.value);
-            onChange({
-              ...design,
-              clothId: e.target.value,
-              gridW: cmToCells(design.widthCm, c),
-              gridH: cmToCells(design.heightCm, c),
-            });
-          }}
-        >
-          {CLOTH_OPTIONS.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="field field-inline">
-        <span>Width (cm)</span>
-        <input
-          type="number"
-          min={1}
-          value={design.widthCm}
-          onChange={(e) => {
-            const widthCm = Math.max(1, Number(e.target.value) || 1);
-            onChange({ ...design, widthCm, gridW: cmToCells(widthCm, cloth) });
-          }}
-        />
-      </label>
-      <label className="field field-inline">
-        <span>Height (cm)</span>
-        <input
-          type="number"
-          min={1}
-          value={design.heightCm}
-          onChange={(e) => {
-            const heightCm = Math.max(1, Number(e.target.value) || 1);
-            onChange({ ...design, heightCm, gridH: cmToCells(heightCm, cloth) });
-          }}
-        />
-      </label>
-      <label className="field field-inline">
-        <span>Strands</span>
-        <select
-          value={design.strandsId}
-          onChange={(e) => onChange({ ...design, strandsId: e.target.value })}
-        >
-          {STRAND_OPTIONS.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <span className="design-clothbar-meta">
-        {design.gridW}×{design.gridH} stitches
-      </span>
+      {/* Always-editable name. Empty falls back to "Untitled design" on blur
+          so the design list never shows a blank card. */}
+      <input
+        className="design-clothbar-name-input"
+        value={design.name}
+        placeholder="Untitled design"
+        aria-label="Design name"
+        onChange={(e) => onChange({ ...design, name: e.target.value })}
+        onBlur={(e) => {
+          if (!e.target.value.trim()) onChange({ ...design, name: 'Untitled design' });
+        }}
+      />
+      {!open && (
+        // Compact summary: read-only chip of the current cloth/size/strands,
+        // with one button to re-expand the full form.
+        <>
+          <span className="design-clothbar-summary">
+            {cloth.label} · {design.widthCm}×{design.heightCm} cm · {design.gridW}×{design.gridH} st
+            {strands ? ` · ${strands.label}` : ''}
+          </span>
+          <button
+            type="button"
+            className="btn-ghost btn-sm"
+            onClick={() => setOpen(true)}
+            title="Edit cloth, size, strands"
+          >
+            Edit
+          </button>
+        </>
+      )}
+      {open && (
+        <>
+          <label className="field field-inline">
+            <span>Cloth</span>
+            <select
+              value={design.clothId}
+              onChange={(e) => {
+                const c = getCloth(e.target.value);
+                onChange({
+                  ...design,
+                  clothId: e.target.value,
+                  gridW: cmToCells(design.widthCm, c),
+                  gridH: cmToCells(design.heightCm, c),
+                });
+              }}
+            >
+              {CLOTH_OPTIONS.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field field-inline">
+            <span>Width (cm)</span>
+            <input
+              type="number"
+              min={1}
+              value={design.widthCm}
+              onChange={(e) => {
+                const widthCm = Math.max(1, Number(e.target.value) || 1);
+                onChange({ ...design, widthCm, gridW: cmToCells(widthCm, cloth) });
+              }}
+            />
+          </label>
+          <label className="field field-inline">
+            <span>Height (cm)</span>
+            <input
+              type="number"
+              min={1}
+              value={design.heightCm}
+              onChange={(e) => {
+                const heightCm = Math.max(1, Number(e.target.value) || 1);
+                onChange({ ...design, heightCm, gridH: cmToCells(heightCm, cloth) });
+              }}
+            />
+          </label>
+          <label className="field field-inline">
+            <span>Strands</span>
+            <select
+              value={design.strandsId}
+              onChange={(e) => onChange({ ...design, strandsId: e.target.value })}
+            >
+              {STRAND_OPTIONS.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <span className="design-clothbar-meta">
+            {design.gridW}×{design.gridH} stitches
+          </span>
+          <button
+            type="button"
+            className="btn-ghost btn-sm"
+            onClick={() => setOpen(false)}
+            title="Collapse"
+          >
+            Done
+          </button>
+        </>
+      )}
     </section>
   );
 }

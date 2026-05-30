@@ -398,6 +398,33 @@ body {
 /* cloth bar — the first choice, full width across the top */
 .design-clothbar { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 16px; border: 1px solid var(--rule); border-radius: var(--card-radius); padding: 12px 16px; background: var(--surface); }
 .design-clothbar-name { font-family: var(--font-display); font-size: 20px; font-weight: var(--display-weight); align-self: center; margin-right: auto; }
+/* Inline-editable design name. Borderless until hover/focus so it reads as
+   a title, but invites editing on interaction. */
+.design-clothbar-name-input {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: var(--display-weight);
+  align-self: center;
+  margin-right: auto;
+  border: 1px solid transparent;
+  border-radius: var(--input-radius);
+  background: transparent;
+  color: var(--ink);
+  padding: 4px 8px;
+  min-width: 160px;
+}
+.design-clothbar-name-input:hover { border-color: var(--rule); }
+.design-clothbar-name-input:focus { border-color: var(--accent); background: var(--surface-deep); outline: none; }
+/* One-line read-only summary shown when the cloth bar is collapsed. */
+.design-clothbar-summary {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-soft);
+  align-self: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .design-clothbar-meta { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); align-self: center; white-space: nowrap; }
 .field-inline { min-width: 110px; }
 
