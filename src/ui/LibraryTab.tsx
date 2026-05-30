@@ -14,6 +14,12 @@ import { hasCanonicalGroundTruth } from '../patterns/groundTruths';
 import type { Pattern } from '../engine/types';
 import PatternThumb from './PatternThumb';
 import { parseOxs } from '../oxs/parseOxs';
+import {
+  CATEGORY_FILTERS,
+  categoriesOf,
+  isBorderPattern,
+  type Category,
+} from './patternFilters';
 
 const archivePatternKey = (slug: string) => `tirazain:${slug}`;
 
@@ -94,6 +100,8 @@ export default function LibraryTab({ onSelect, showToast }: Props) {
     null,
   );
   const [archiveShowAll, setArchiveShowAll] = useState(false);
+  const [archiveCats, setArchiveCats] = useState<Set<Category>>(new Set());
+  const [archiveBorders, setArchiveBorders] = useState(false);
 
   const archiveData = useMemo(() => {
     return Object.entries(TIRAZAIN_ARCHIVE).map(([slug, p]) => {
@@ -105,10 +113,19 @@ export default function LibraryTab({ onSelect, showToast }: Props) {
         painted,
         size: sizeBucket(p),
         complexity: complexityBucket(painted),
+        cats: categoriesOf(p),
+        isBorder: isBorderPattern(p),
       };
     });
   }, []);
   const archiveEntries = archiveData;
+
+  const archiveCategoryCounts = useMemo(() => {
+    const counts = {} as Record<Category, number>;
+    for (const [key] of CATEGORY_FILTERS) counts[key] = 0;
+    for (const e of archiveEntries) for (const c of e.cats) counts[c]++;
+    return counts;
+  }, [archiveEntries]);
 
   const archiveRegions = useMemo(() => {
     const counts = new Map<string, number>();
@@ -129,6 +146,10 @@ export default function LibraryTab({ onSelect, showToast }: Props) {
       }
       if (archiveSize && e.size !== archiveSize) return false;
       if (archiveComplexity && e.complexity !== archiveComplexity) return false;
+      if (archiveCats.size > 0 && !e.cats.some((c) => archiveCats.has(c))) {
+        return false;
+      }
+      if (archiveBorders && !e.isBorder) return false;
       if (!matchesQuery(e.pattern, archiveQuery)) return false;
       return true;
     });
@@ -139,6 +160,8 @@ export default function LibraryTab({ onSelect, showToast }: Props) {
     archiveColors,
     archiveSize,
     archiveComplexity,
+    archiveCats,
+    archiveBorders,
   ]);
 
   const archiveIsFiltered =
@@ -146,7 +169,9 @@ export default function LibraryTab({ onSelect, showToast }: Props) {
     archiveRegion !== null ||
     archiveColors !== null ||
     archiveSize !== null ||
-    archiveComplexity !== null;
+    archiveComplexity !== null ||
+    archiveCats.size > 0 ||
+    archiveBorders;
 
   const archiveVisible =
     archiveShowAll || archiveIsFiltered
@@ -159,6 +184,8 @@ export default function LibraryTab({ onSelect, showToast }: Props) {
     setArchiveColors(null);
     setArchiveSize(null);
     setArchiveComplexity(null);
+    setArchiveCats(new Set());
+    setArchiveBorders(false);
   };
 
   useEffect(() => {
@@ -356,6 +383,35 @@ export default function LibraryTab({ onSelect, showToast }: Props) {
                   {label}
                 </Chip>
               ))}
+            </FilterRow>
+
+            <FilterRow label="Category" labelAr="الفئة">
+              {CATEGORY_FILTERS.map(([key, label, labelAr]) => (
+                <Chip
+                  key={key}
+                  active={archiveCats.has(key)}
+                  onClick={() =>
+                    setArchiveCats((cur) => {
+                      const next = new Set(cur);
+                      if (next.has(key)) next.delete(key);
+                      else next.add(key);
+                      return next;
+                    })
+                  }
+                >
+                  {label} <span dir="rtl">{labelAr}</span>{' '}
+                  <span className="chip-count">{archiveCategoryCounts[key]}</span>
+                </Chip>
+              ))}
+            </FilterRow>
+
+            <FilterRow label="Borders" labelAr="الحواشي">
+              <Chip
+                active={archiveBorders}
+                onClick={() => setArchiveBorders((v) => !v)}
+              >
+                Borders only <span dir="rtl">حواشي فقط</span>
+              </Chip>
             </FilterRow>
           </div>
 
