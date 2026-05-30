@@ -11,7 +11,7 @@
 import type { ColorIndex, Palette, PaletteColor, Pattern } from '../engine/types';
 import { getPaletteColors } from '../patterns/builtin';
 import { colorFromHex } from '../patterns/dmcCatalog';
-import type { ClothOption } from './cloth';
+import { getCloth, DEFAULT_STRANDS_ID, type ClothOption } from './cloth';
 
 export interface PlacedMotif {
   /** Library reference (builtin / saved / tirazain key) for provenance. */
@@ -357,4 +357,31 @@ export function placeMotif(
     motifs: [{ patternKey: entry.key, cells, x: 0, y: 0 }],
   };
   return { ...design, palette: merged.palette, areas: [...design.areas, area] };
+}
+
+/**
+ * Build a new, empty Design from human inputs. Computes the derived grid size
+ * from the cloth so callers don't repeat that. `name` is trimmed; a blank name
+ * falls back to 'Untitled design'. strandsId defaults to the app default.
+ */
+export function createDesign(opts: {
+  name?: string;
+  clothId: string;
+  widthCm: number;
+  heightCm: number;
+  strandsId?: string;
+}): Design {
+  const cloth = getCloth(opts.clothId);
+  return {
+    id: newId('design'),
+    name: (opts.name ?? '').trim() || 'Untitled design',
+    clothId: opts.clothId,
+    strandsId: opts.strandsId ?? DEFAULT_STRANDS_ID,
+    widthCm: opts.widthCm,
+    heightCm: opts.heightCm,
+    gridW: cmToCells(opts.widthCm, cloth),
+    gridH: cmToCells(opts.heightCm, cloth),
+    areas: [],
+    palette: [null],
+  };
 }

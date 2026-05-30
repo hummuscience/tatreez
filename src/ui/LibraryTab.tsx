@@ -75,11 +75,11 @@ function complexityBucket(painted: number): ComplexityBucket {
 }
 
 interface Props {
-  onLoad: (pattern: Pattern, patternKey: string) => void;
+  onSelect: (pattern: Pattern, patternKey: string) => void;
   showToast: (msg: string) => void;
 }
 
-export default function LibraryTab({ onLoad, showToast }: Props) {
+export default function LibraryTab({ onSelect, showToast }: Props) {
   const [saved, setSaved] = useState<SavedPattern[]>([]);
   const [refreshTick, setRefreshTick] = useState(0);
   const [gtKeys, setGtKeys] = useState<Set<string>>(new Set());
@@ -194,7 +194,7 @@ export default function LibraryTab({ onLoad, showToast }: Props) {
       showToast(
         `Imported ${result.pattern.width}×${result.pattern.height} (${result.stitchCount} stitches)${extraMsg}`,
       );
-      onLoad(result.pattern, savedPatternKey(id));
+      onSelect(result.pattern, savedPatternKey(id));
     } catch (err) {
       showToast(
         `OXS import failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -227,7 +227,7 @@ export default function LibraryTab({ onLoad, showToast }: Props) {
               <PatternCard
                 key={id}
                 pattern={p}
-                onClick={() => onLoad(clonePattern(p), key)}
+                onClick={() => onSelect(clonePattern(p), key)}
                 badge={hasGt ? 'GT' : undefined}
               />
             );
@@ -369,7 +369,7 @@ export default function LibraryTab({ onLoad, showToast }: Props) {
                     key={slug}
                     pattern={p}
                     onClick={() =>
-                      onLoad(clonePattern(p), archivePatternKey(slug))
+                      onSelect(clonePattern(p), archivePatternKey(slug))
                     }
                   />
                 ))}
@@ -433,7 +433,7 @@ export default function LibraryTab({ onLoad, showToast }: Props) {
                 <PatternCard
                   key={entry.id}
                   pattern={entry.pattern}
-                  onClick={() => onLoad(clonePattern(entry.pattern), key)}
+                  onClick={() => onSelect(clonePattern(entry.pattern), key)}
                   badge={gtKeys.has(key) ? 'GT' : undefined}
                   onDelete={() => handleDelete(entry.id, name)}
                 />
