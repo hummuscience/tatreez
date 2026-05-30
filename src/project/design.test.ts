@@ -6,6 +6,7 @@ import {
   flipX,
   flipY,
   mergePalette,
+  placeMotif,
   recolorAreaIndex,
   remapCells,
   repeatFit,
@@ -13,8 +14,10 @@ import {
   rotateTurns,
   trimCells,
   type Area,
+  type Design,
 } from './design';
 import { getCloth } from './cloth';
+import type { Pattern } from '../engine/types';
 
 function motifArea(cells: number[][]): Area {
   return { id: 'a', name: 'a', x: 0, y: 0, w: cells[0].length, h: cells.length, motifs: [{ patternKey: 'k', x: 0, y: 0, cells }] };
@@ -317,5 +320,64 @@ describe('repeatFit', () => {
     const p = compositeArea(a, palette);
     // motif [1,0] repeated twice across width 4 → [1,0,1,0]
     expect(p.cells[0]).toEqual([1, 0, 1, 0]);
+  });
+});
+
+describe('placeMotif', () => {
+  const motif: Pattern = {
+    name: 'Dot',
+    width: 4,
+    height: 4,
+    // a single painted cell with blank margins, so trim matters
+    cells: [
+      [0, 0, 0, 0],
+      [0, 1, 0, 0],
+      [0, 0, 0, 0],
+      [0, 0, 0, 0],
+    ],
+    palette: [null, { hex: '#D21D22' }],
+  };
+  const entry = { key: 'builtin:dot', pattern: motif };
+
+  const baseDesign: Design = {
+    id: 'd1',
+    name: 'D',
+    clothId: 'aida-14',
+    strandsId: '2',
+    widthCm: 10,
+    heightCm: 10,
+    gridW: 20,
+    gridH: 20,
+    areas: [],
+    palette: [null],
+  };
+
+  it('adds a new tight area hugging the trimmed motif at the drop point', () => {
+    const next = placeMotif(baseDesign, entry, 5, 7);
+    expect(next.areas).toHaveLength(1);
+    const a = next.areas[0];
+    expect(a.x).toBe(5);
+    expect(a.y).toBe(7);
+    expect(a.w).toBe(1); // trimmed to the single painted cell
+    expect(a.h).toBe(1);
+    expect(a.motifs).toHaveLength(1);
+    expect(a.motifs[0].patternKey).toBe('builtin:dot');
+    // palette merged: the motif colour appended at index 1
+    expect(next.palette[1]?.hex).toBe('#D21D22');
+    // the motif cell references the merged design index
+    expect(a.motifs[0].cells).toEqual([[1]]);
+  });
+
+  it('clamps the area on-grid when the drop point is past the edge', () => {
+    const next = placeMotif(baseDesign, entry, 19, 19);
+    const a = next.areas[0];
+    expect(a.x).toBe(19); // 1-wide area still fits at x=19 (gridW=20)
+    expect(a.y).toBe(19);
+  });
+
+  it('does not mutate the input design', () => {
+    placeMotif(baseDesign, entry, 0, 0);
+    expect(baseDesign.areas).toHaveLength(0);
+    expect(baseDesign.palette).toEqual([null]);
   });
 });
