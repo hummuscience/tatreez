@@ -317,6 +317,21 @@ function DesignComposer({
   const [fColors, setFColors] = useState<ColorBucket | null>(null);
   const [fSize, setFSize] = useState<SizeBucket | null>(null);
   const [fComplexity, setFComplexity] = useState<ComplexityBucket | null>(null);
+  // View toggles. Hiding either side widens the canvas (the grid template
+  // collapses the dropped column). Persisted so the user's preferred
+  // working surface survives a refresh.
+  const [showPatterns, setShowPatterns] = useState<boolean>(() => {
+    try { return localStorage.getItem('design:showPatterns') !== '0'; } catch { return true; }
+  });
+  const [showInspector, setShowInspector] = useState<boolean>(() => {
+    try { return localStorage.getItem('design:showInspector') !== '0'; } catch { return true; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('design:showPatterns', showPatterns ? '1' : '0'); } catch { /* noop */ }
+  }, [showPatterns]);
+  useEffect(() => {
+    try { localStorage.setItem('design:showInspector', showInspector ? '1' : '0'); } catch { /* noop */ }
+  }, [showInspector]);
 
   const library = useMemo(() => buildLibrary(), []);
   // DMC numbers used across the library — powers the picker's "library only"
@@ -1143,7 +1158,10 @@ function DesignComposer({
       {/* Top: cloth + size + strands — the first choice, full width */}
       <ClothBar design={design} onChange={onChange} onClose={onClose} />
 
-      {/* Filter row: search + compact dropdowns, one line */}
+      {/* Filter row: search + compact dropdowns, one line. Hidden when the
+          Patterns library is off — without library cards there's nothing
+          to filter. */}
+      {showPatterns && (
       <div className="design-filterbar">
         <label className="filter-search">
           <SearchIcon />
@@ -1235,20 +1253,25 @@ function DesignComposer({
           </button>
         )}
       </div>
+      )}
 
-      {/* L-shape: left motif column + canvas + right inspector, then bottom strip */}
-      <div className="design-body-l">
+      {/* L-shape: left motif column + canvas + right inspector, then bottom strip.
+          Modifier classes drop the relevant grid column when its panel is off,
+          so the canvas naturally widens. */}
+      <div className={`design-body-l${showPatterns ? '' : ' design-body-l-no-patterns'}${showInspector ? '' : ' design-body-l-no-inspector'}`}>
         {/* Cap the left column to the canvas's displayed height so the bottom
             strip hugs the canvas bottom instead of floating far below it. */}
-        <aside className="design-motif-col" style={{ maxHeight: displayedCanvasH }}>
-          {leftMotifs.length === 0 ? (
-            <p className="empty-hint">No patterns match.</p>
-          ) : (
-            leftMotifs.map((l) => (
-              <MotifCard key={l.key} entry={l} armed={armedKey === l.key} onArm={armMotif} />
-            ))
-          )}
-        </aside>
+        {showPatterns && (
+          <aside className="design-motif-col" style={{ maxHeight: displayedCanvasH }}>
+            {leftMotifs.length === 0 ? (
+              <p className="empty-hint">No patterns match.</p>
+            ) : (
+              leftMotifs.map((l) => (
+                <MotifCard key={l.key} entry={l} armed={armedKey === l.key} onArm={armMotif} />
+              ))
+            )}
+          </aside>
+        )}
 
         <div className="design-canvas-wrap" ref={wrapRef}>
           <div className="design-canvas-scroll" ref={canvasScrollRef}>
@@ -1287,6 +1310,29 @@ function DesignComposer({
                 Fit
               </button>
             </div>
+            {/* View toggles: collapse either side to widen the canvas. Each
+                button is on when the panel is visible (pressed-look) and off
+                when hidden — same colour cue as a tab. */}
+            <div className="design-view-toggles" role="group" aria-label="Panels">
+              <button
+                type="button"
+                className={`chip${showPatterns ? ' chip-active' : ''}`}
+                aria-pressed={showPatterns}
+                onClick={() => setShowPatterns((v) => !v)}
+                title={showPatterns ? 'Hide pattern library' : 'Show pattern library'}
+              >
+                Patterns
+              </button>
+              <button
+                type="button"
+                className={`chip${showInspector ? ' chip-active' : ''}`}
+                aria-pressed={showInspector}
+                onClick={() => setShowInspector((v) => !v)}
+                title={showInspector ? 'Hide inspector' : 'Show inspector'}
+              >
+                Inspector
+              </button>
+            </div>
             <p className="design-canvas-hint">
               Drag on empty canvas to mark an area · drag a pattern on · drag a motif to move · handle
               rotates (Alt = snap 90°) · Shift + scroll to zoom
@@ -1294,57 +1340,60 @@ function DesignComposer({
           </div>
         </div>
 
-        <aside className="design-inspector">
-          <AreaInspector
-            area={activeArea}
-            selectedCount={selectedIds.size}
-            palette={design.palette}
-            libraryNumbers={libraryNumbers}
-            onRecolor={recolorActiveArea}
-            updateArea={updateArea}
-            onRotate={() => rotateGroup(1)}
-            onFlip={(axis) => {
-              const f = axis === 'x' ? flipX : flipY;
-              onChange({
-                ...design,
-                areas: design.areas.map((a) =>
-                  selectedIds.has(a.id)
-                    ? {
-                        ...a,
-                        motifs: a.motifs.map((m) => ({ ...m, cells: f(m.cells) })),
-                        repeat: a.repeat ? { ...a.repeat, cells: f(a.repeat.cells) } : undefined,
-                      }
-                    : a,
-                ),
-              });
-            }}
-            onDuplicate={() => duplicateAreas(selectedAreas())}
-            onDeleteArea={() => {
-              onChange({ ...design, areas: design.areas.filter((a) => !selectedIds.has(a.id)) });
-              selectOne(null);
-            }}
-            onPlanArea={(area) => {
-              const sub = compositeArea(area, design.palette);
-              onPlanArea(sub, `design:${design.id}:${area.id}`);
-            }}
-          />
-          {/* Right arm: motifs fill the space below the inspector to the
-              canvas bottom (clipped so they don't overrun it). */}
-          {rightMotifs.length > 0 && (
-            <div
-              className="design-motif-col design-motif-col-right"
-              style={{ maxHeight: Math.max(0, displayedCanvasH - 300) }}
-            >
-              {rightMotifs.map((l) => (
-                <MotifCard key={l.key} entry={l} armed={armedKey === l.key} onArm={armMotif} />
-              ))}
-            </div>
-          )}
-        </aside>
+        {showInspector && (
+          <aside className="design-inspector">
+            <AreaInspector
+              area={activeArea}
+              selectedCount={selectedIds.size}
+              palette={design.palette}
+              libraryNumbers={libraryNumbers}
+              onRecolor={recolorActiveArea}
+              updateArea={updateArea}
+              onRotate={() => rotateGroup(1)}
+              onFlip={(axis) => {
+                const f = axis === 'x' ? flipX : flipY;
+                onChange({
+                  ...design,
+                  areas: design.areas.map((a) =>
+                    selectedIds.has(a.id)
+                      ? {
+                          ...a,
+                          motifs: a.motifs.map((m) => ({ ...m, cells: f(m.cells) })),
+                          repeat: a.repeat ? { ...a.repeat, cells: f(a.repeat.cells) } : undefined,
+                        }
+                      : a,
+                  ),
+                });
+              }}
+              onDuplicate={() => duplicateAreas(selectedAreas())}
+              onDeleteArea={() => {
+                onChange({ ...design, areas: design.areas.filter((a) => !selectedIds.has(a.id)) });
+                selectOne(null);
+              }}
+              onPlanArea={(area) => {
+                const sub = compositeArea(area, design.palette);
+                onPlanArea(sub, `design:${design.id}:${area.id}`);
+              }}
+            />
+            {/* Right arm: motifs fill the space below the inspector to the
+                canvas bottom (clipped so they don't overrun it). Only shown
+                while the Patterns library is on. */}
+            {showPatterns && rightMotifs.length > 0 && (
+              <div
+                className="design-motif-col design-motif-col-right"
+                style={{ maxHeight: Math.max(0, displayedCanvasH - 300) }}
+              >
+                {rightMotifs.map((l) => (
+                  <MotifCard key={l.key} entry={l} armed={armedKey === l.key} onArm={armMotif} />
+                ))}
+              </div>
+            )}
+          </aside>
+        )}
       </div>
 
       {/* Bottom: full-width rows beneath the whole band, filled left→right. */}
-      {bottomMotifs.length > 0 && (
+      {showPatterns && bottomMotifs.length > 0 && (
         <div className="design-motif-strip">
           {bottomMotifs.map((l) => (
             <MotifCard key={l.key} entry={l} armed={armedKey === l.key} onArm={armMotif} />
