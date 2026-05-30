@@ -717,7 +717,23 @@ function DesignComposer({
   };
 
   // ----- pointer: select / move / rotate / marquee -----
-  const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  // Pointer events instead of mouse events so a fingertip on iPad drives
+  // the same code as a mouse on desktop. Pointers expose `shiftKey/altKey`
+  // too, so modifier-driven behaviour (Shift = additive, Alt = snap) still
+  // works wherever the hardware/OS lets the user trigger them.
+  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    // Two-finger pinch is handled separately — let the pinch effect see
+    // both pointers and skip the selection logic.
+    if (registerPinchPointer(e)) return;
+    // Capture this pointer so move/up keep firing even if the finger drags
+    // outside the canvas; without it iPad gives us a single down and never
+    // the matching up.
+    e.currentTarget.setPointerCapture(e.pointerId);
+    // If a library motif is armed, the tap places it instead of selecting.
+    if (armedKeyRef.current) {
+      placeArmedMotif(e.clientX, e.clientY);
+      return;
+    }
     const additive = e.shiftKey || e.metaKey || e.ctrlKey;
 
     // Delete (×) button on a selected area takes priority over everything.
@@ -775,7 +791,11 @@ function DesignComposer({
     }
   };
 
-  const onMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (pinchPointersRef.current.has(e.pointerId)) {
+      updatePinch(e);
+      return;
+    }
     const it = interactionRef.current;
     if (!it) return;
     if (it.kind === 'move') {
@@ -818,7 +838,11 @@ function DesignComposer({
     }
   };
 
-  const onMouseUp = () => {
+  const onPointerUp = (e?: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e && pinchPointersRef.current.has(e.pointerId)) {
+      endPinch(e);
+      return;
+    }
     const it = interactionRef.current;
     interactionRef.current = null;
     if (!it) return;
@@ -869,13 +893,13 @@ function DesignComposer({
     }
   };
 
-  // ----- drop a library card onto the canvas: make a tight 1-motif area -----
-  const onDrop = (e: React.DragEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    const key = e.dataTransfer.getData('text/plain');
+  // ----- place a library motif at a canvas position --------------------------
+  // Drop OR tap-to-place both end up here so the two input paths behave
+  // identically: pick the same area-merge or new-area rules.
+  const placeMotifAt = (key: string, clientX: number, clientY: number) => {
     const entry = library.find((l) => l.key === key);
     if (!entry) return;
-    const [cx, cy] = cellAt(e.clientX, e.clientY);
+    const [cx, cy] = cellAt(clientX, clientY);
 
     const merged = mergePalette(design.palette, patternPalette(entry.pattern));
     // Trim the source chart's blank margins so the area hugs the visible motif.
@@ -937,6 +961,109 @@ function DesignComposer({
     };
     onChange({ ...design, palette: merged.palette, areas: [...design.areas, area] });
     selectOne(area.id);
+  };
+
+  // Desktop: HTML5 drag-and-drop. iOS Safari does not fire drag events for
+  // touches, so the tap-arm path below is the iPad equivalent.
+  const onDrop = (e: React.DragEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const key = e.dataTransfer.getData('text/plain');
+    placeMotifAt(key, e.clientX, e.clientY);
+  };
+
+  // ----- tap-to-place (iPad) --------------------------------------------------
+  // The user taps a library card to "arm" a motif, then taps the canvas to
+  // place it. armedKey state drives the visual highlight; armedKeyRef holds
+  // the same value so the canvas pointerdown handler can read it
+  // synchronously without re-binding on each render.
+  const [armedKey, setArmedKey] = useState<string | null>(null);
+  const armedKeyRef = useRef<string | null>(null);
+  useEffect(() => { armedKeyRef.current = armedKey; }, [armedKey]);
+
+  const armMotif = (key: string) => {
+    setArmedKey((cur) => (cur === key ? null : key));
+  };
+
+  const placeArmedMotif = (clientX: number, clientY: number) => {
+    const key = armedKeyRef.current;
+    if (!key) return;
+    placeMotifAt(key, clientX, clientY);
+    setArmedKey(null);
+  };
+
+  // ----- pinch-to-zoom on the canvas ------------------------------------------
+  // Two simultaneous pointers (typically two fingers) drive zoom: pinch out
+  // increases zoom, pinch in decreases. We anchor the zoom around the pinch
+  // midpoint by adjusting the scroll container so the same grid point stays
+  // under the user's fingers.
+  interface Pinch { startDist: number; startZoom: number; midX: number; midY: number; startScrollLeft: number; startScrollTop: number; startMidLocalX: number; startMidLocalY: number; }
+  const pinchPointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchRef = useRef<Pinch | null>(null);
+
+  /** Returns true when the pointer should be treated as part of a pinch
+   * (i.e. we've now seen ≥2 simultaneous pointers) and the normal selection
+   * logic should bail out. */
+  const registerPinchPointer = (e: React.PointerEvent<HTMLCanvasElement>): boolean => {
+    if (e.pointerType !== 'touch') return false;
+    pinchPointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinchPointersRef.current.size < 2) return false;
+    // We've got two fingers — cancel any in-flight selection and start a pinch.
+    interactionRef.current = null;
+    const pts = [...pinchPointersRef.current.values()];
+    const dx = pts[0].x - pts[1].x;
+    const dy = pts[0].y - pts[1].y;
+    const startDist = Math.hypot(dx, dy) || 1;
+    const midX = (pts[0].x + pts[1].x) / 2;
+    const midY = (pts[0].y + pts[1].y) / 2;
+    const scroll = canvasScrollRef.current;
+    const canvas = canvasRef.current;
+    const r = canvas?.getBoundingClientRect();
+    pinchRef.current = {
+      startDist,
+      startZoom: zoom,
+      midX,
+      midY,
+      startScrollLeft: scroll?.scrollLeft ?? 0,
+      startScrollTop: scroll?.scrollTop ?? 0,
+      // Pinch midpoint in the canvas's local pixel space (pre-zoom-change),
+      // so we can keep that point under the fingers after rescaling.
+      startMidLocalX: r ? midX - r.left + (scroll?.scrollLeft ?? 0) : 0,
+      startMidLocalY: r ? midY - r.top + (scroll?.scrollTop ?? 0) : 0,
+    };
+    return true;
+  };
+
+  const updatePinch = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!pinchPointersRef.current.has(e.pointerId)) return;
+    pinchPointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const pinch = pinchRef.current;
+    if (!pinch || pinchPointersRef.current.size < 2) return;
+    const pts = [...pinchPointersRef.current.values()];
+    const dx = pts[0].x - pts[1].x;
+    const dy = pts[0].y - pts[1].y;
+    const dist = Math.hypot(dx, dy) || 1;
+    const next = Math.max(0.5, Math.min(4, pinch.startZoom * (dist / pinch.startDist)));
+    setZoom(next);
+    // After React rerenders the canvas at the new zoom, recentre the scroll
+    // so the pinch midpoint stays put under the fingers. Defer to rAF so we
+    // run after the new canvas width/height landed.
+    const scaleRatio = next / pinch.startZoom;
+    requestAnimationFrame(() => {
+      const scroll = canvasScrollRef.current;
+      if (!scroll) return;
+      const newMidLocalX = pinch.startMidLocalX * scaleRatio;
+      const newMidLocalY = pinch.startMidLocalY * scaleRatio;
+      const r = canvasRef.current?.getBoundingClientRect();
+      if (!r) return;
+      // We want newMidLocalX to land at (midX - r.left); adjust scrollLeft.
+      scroll.scrollLeft = newMidLocalX - (pinch.midX - (r.left + scroll.scrollLeft));
+      scroll.scrollTop = newMidLocalY - (pinch.midY - (r.top + scroll.scrollTop));
+    });
+  };
+
+  const endPinch = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    pinchPointersRef.current.delete(e.pointerId);
+    if (pinchPointersRef.current.size < 2) pinchRef.current = null;
   };
 
   const filteredLib = library.filter((l) => {
@@ -1117,7 +1244,9 @@ function DesignComposer({
           {leftMotifs.length === 0 ? (
             <p className="empty-hint">No patterns match.</p>
           ) : (
-            leftMotifs.map((l) => <MotifCard key={l.key} entry={l} />)
+            leftMotifs.map((l) => (
+              <MotifCard key={l.key} entry={l} armed={armedKey === l.key} onArm={armMotif} />
+            ))
           )}
         </aside>
 
@@ -1127,12 +1256,16 @@ function DesignComposer({
               ref={canvasRef}
               width={canvasW}
               height={canvasH}
-              className="design-canvas"
-              onMouseDown={onMouseDown}
-              onMouseMove={onMouseMove}
-              onMouseUp={onMouseUp}
-              onMouseLeave={() => {
-                if (interactionRef.current) onMouseUp();
+              className={`design-canvas${armedKey ? ' design-canvas-armed' : ''}`}
+              // `touch-action: none` (set in CSS) tells iPad we'll handle
+              // touches ourselves, so the page doesn't scroll/zoom while the
+              // user is dragging or pinching the canvas.
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={(e) => onPointerUp(e)}
+              onPointerCancel={(e) => onPointerUp(e)}
+              onPointerLeave={(e) => {
+                if (interactionRef.current) onPointerUp(e);
               }}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -1203,7 +1336,7 @@ function DesignComposer({
               style={{ maxHeight: Math.max(0, displayedCanvasH - 300) }}
             >
               {rightMotifs.map((l) => (
-                <MotifCard key={l.key} entry={l} />
+                <MotifCard key={l.key} entry={l} armed={armedKey === l.key} onArm={armMotif} />
               ))}
             </div>
           )}
@@ -1214,7 +1347,7 @@ function DesignComposer({
       {bottomMotifs.length > 0 && (
         <div className="design-motif-strip">
           {bottomMotifs.map((l) => (
-            <MotifCard key={l.key} entry={l} />
+            <MotifCard key={l.key} entry={l} armed={armedKey === l.key} onArm={armMotif} />
           ))}
         </div>
       )}
@@ -1222,16 +1355,32 @@ function DesignComposer({
   );
 }
 
-/** A draggable motif thumbnail used in both arms of the L. */
-function MotifCard({ entry }: { entry: LibEntry }) {
+/** A draggable motif thumbnail used in both arms of the L.
+ *
+ * Two placement paths:
+ *  - desktop: HTML5 drag-and-drop (onDragStart sets the key, canvas onDrop reads it)
+ *  - touch (iPad): a tap arms the motif via `onArm`; the next tap on the
+ *    canvas places it. iOS Safari never fires drag events for fingers so
+ *    this is the only path that works there.
+ */
+function MotifCard({
+  entry,
+  armed,
+  onArm,
+}: {
+  entry: LibEntry;
+  armed: boolean;
+  onArm: (key: string) => void;
+}) {
   return (
     <div
-      className="design-lib-card"
+      className={`design-lib-card${armed ? ' design-lib-card-armed' : ''}`}
       draggable
       onDragStart={(e) => {
         e.dataTransfer.setData('text/plain', entry.key);
         e.dataTransfer.effectAllowed = 'copy';
       }}
+      onClick={() => onArm(entry.key)}
       title={`${entry.pattern.name} · ${entry.pattern.width}×${entry.pattern.height}`}
     >
       <PatternThumb pattern={entry.pattern} width={104} height={82} />
