@@ -48,9 +48,17 @@ export default function PatternDetail({
   const sourceUrl = p.source?.url;
 
   return (
-    <div className="pd-overlay" role="dialog" aria-modal="true" aria-label={p.name}>
-      <button className="pd-backdrop" type="button" aria-label="Close" onClick={onClose} />
-      <aside className="pd-panel">
+    <div className="pd-root">
+      {/* Transparent click-away catcher behind the panel: tapping the page
+          (outside the panel) closes it. It sits below the panel and does not
+          dim or block scrolling of the library underneath. */}
+      <button
+        className="pd-catcher"
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+      />
+      <aside className="pd-panel" role="dialog" aria-modal="false" aria-label={p.name}>
         <button className="pd-close" type="button" aria-label="Close" onClick={onClose}>
           ✕
         </button>
@@ -152,6 +160,7 @@ export default function PatternDetail({
     </div>
   );
 }
+
 
 /** A small modal listing existing designs plus a "New design" choice. */
 function DesignPicker({

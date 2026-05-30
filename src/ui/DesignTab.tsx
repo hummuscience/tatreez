@@ -704,11 +704,54 @@ function DesignComposer({
     ];
   };
 
+  // Is there a painted (non-zero) cell at (cx, cy) inside this area? Walks
+  // every motif (and the repeat, if any) at the local coord. Empty areas
+  // (motif-less, no repeat) intentionally return false — callers fall back
+  // to a bounding-box test for those, since the user must still be able to
+  // grab their drawn marker.
+  const cellPaintedAt = (a: Area, cx: number, cy: number): boolean => {
+    const lx = cx - a.x;
+    const ly = cy - a.y;
+    if (lx < 0 || ly < 0 || lx >= a.w || ly >= a.h) return false;
+    for (const m of a.motifs) {
+      const mx = lx - m.x;
+      const my = ly - m.y;
+      if (my < 0 || my >= m.cells.length) continue;
+      const row = m.cells[my];
+      if (mx < 0 || mx >= row.length) continue;
+      if (row[mx] > 0) return true;
+    }
+    if (a.repeat) {
+      const cells = a.repeat.cells;
+      const mh = cells.length;
+      const mw = mh > 0 ? cells[0].length : 0;
+      if (mh > 0 && mw > 0) {
+        // Same tiling math as compositeArea: only the rows/cols that fit
+        // entirely (no partial tile spillover) are painted.
+        const fit = repeatFit(a, mw, mh, a.repeat.mode);
+        const inRows = ly < fit.rows * mh;
+        const inCols = lx < fit.cols * mw;
+        if (inRows && inCols) {
+          const v = cells[ly % mh][lx % mw];
+          if (v > 0) return true;
+        }
+      }
+    }
+    return false;
+  };
+
   const areaAt = (cx: number, cy: number): Area | null => {
-    // topmost area containing the cell (last drawn wins visually → search reversed)
+    // Topmost area whose painted cell sits under the pointer (last drawn
+    // wins visually → search reversed). Empty marker areas (no motifs and
+    // no repeat) fall back to bounding-box hit so the user can still tap
+    // them — they have no painted cells by definition.
     for (let i = design.areas.length - 1; i >= 0; i--) {
       const a = design.areas[i];
-      if (cx >= a.x && cx < a.x + a.w && cy >= a.y && cy < a.y + a.h) return a;
+      const inBox = cx >= a.x && cx < a.x + a.w && cy >= a.y && cy < a.y + a.h;
+      if (!inBox) continue;
+      const isEmpty = a.motifs.length === 0 && !a.repeat;
+      if (isEmpty) return a;
+      if (cellPaintedAt(a, cx, cy)) return a;
     }
     return null;
   };

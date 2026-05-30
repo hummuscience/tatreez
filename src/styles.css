@@ -641,26 +641,33 @@ body {
 }
 
 /* ---- Pattern detail slide-over ---- */
-.pd-overlay {
+/* Transparent full-viewport click-away catcher, below the panel. Tapping the
+   page (outside the panel) closes it; it does NOT dim or block the page, so the
+   library stays scrollable and interactive behind the open panel. */
+.pd-catcher {
   position: fixed;
   inset: 0;
-  z-index: 50;
-  display: flex;
-  justify-content: flex-end;
-}
-.pd-backdrop {
-  position: absolute;
-  inset: 0;
+  z-index: 49;
   border: 0;
+  margin: 0;
   padding: 0;
-  background: rgba(0, 0, 0, 0.35);
-  cursor: pointer;
+  background: transparent;
+  cursor: default;
 }
+/* The panel is pinned to the right edge of the *visual* viewport and spans its
+   full height, so it always sits in view regardless of page scroll. Using
+   fixed + 100dvh (100vh fallback) keeps it correct on iPad, where the
+   collapsing address bar otherwise mispositions a height:100% panel. */
 .pd-panel {
-  position: relative;
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 50;
   width: min(420px, 92vw);
-  height: 100%;
+  height: 100vh;
+  height: 100dvh;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   background: var(--surface);
   border-left: 1px solid var(--rule);
   box-shadow: -8px 0 24px rgba(0, 0, 0, 0.18);
