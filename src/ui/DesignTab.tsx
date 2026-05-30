@@ -1213,34 +1213,18 @@ function DesignComposer({
 
   return (
     <div className="design-composer">
-      {/* Top: cloth + size + strands — the first choice, full width */}
-      <ClothBar design={design} onChange={onChange} onClose={onClose} />
-
-      {/* View toolbar: always-visible toggles for the two side panels.
-          Lives above the canvas so a tap target is reachable even when the
-          canvas is tall enough to push the foot off-screen (the previous
-          home for these buttons). */}
-      <div className="design-view-bar" role="group" aria-label="Panels">
-        <span className="design-view-bar-label">View</span>
-        <button
-          type="button"
-          className={`chip chip-toggle${showPatterns ? ' chip-active' : ''}`}
-          aria-pressed={showPatterns}
-          onClick={() => setShowPatterns((v) => !v)}
-          title={showPatterns ? 'Hide pattern library' : 'Show pattern library'}
-        >
-          {showPatterns ? 'Patterns ✓' : '+ Patterns'}
-        </button>
-        <button
-          type="button"
-          className={`chip chip-toggle${showInspector ? ' chip-active' : ''}`}
-          aria-pressed={showInspector}
-          onClick={() => setShowInspector((v) => !v)}
-          title={showInspector ? 'Hide inspector' : 'Show inspector'}
-        >
-          {showInspector ? 'Inspector ✓' : '+ Inspector'}
-        </button>
-      </div>
+      {/* One header bar: ← Designs · name · cloth/size/strands summary or
+          edit form · view toggles. Everything project-level lives here so
+          the row above the canvas is a single shelf, not two. */}
+      <ClothBar
+        design={design}
+        onChange={onChange}
+        onClose={onClose}
+        showPatterns={showPatterns}
+        showInspector={showInspector}
+        onTogglePatterns={() => setShowPatterns((v) => !v)}
+        onToggleInspector={() => setShowInspector((v) => !v)}
+      />
 
       {/* Filter row: search + compact dropdowns, one line. Hidden when the
           Patterns library is off — without library cards there's nothing
@@ -1532,10 +1516,18 @@ function ClothBar({
   design,
   onChange,
   onClose,
+  showPatterns,
+  showInspector,
+  onTogglePatterns,
+  onToggleInspector,
 }: {
   design: Design;
   onChange: (d: Design) => void;
   onClose: () => void;
+  showPatterns: boolean;
+  showInspector: boolean;
+  onTogglePatterns: () => void;
+  onToggleInspector: () => void;
 }) {
   const cloth = getCloth(design.clothId);
   const strands = STRAND_OPTIONS.find((s) => s.id === design.strandsId);
@@ -1656,6 +1648,29 @@ function ClothBar({
           </button>
         </>
       )}
+      {/* View toggles: right-aligned, always visible in either open or
+          collapsed state so panels can be revealed before the user touches
+          the project settings. */}
+      <span className="design-clothbar-views" role="group" aria-label="Panels">
+        <button
+          type="button"
+          className={`chip chip-toggle${showPatterns ? ' chip-active' : ''}`}
+          aria-pressed={showPatterns}
+          onClick={onTogglePatterns}
+          title={showPatterns ? 'Hide pattern library' : 'Show pattern library'}
+        >
+          {showPatterns ? 'Patterns ✓' : '+ Patterns'}
+        </button>
+        <button
+          type="button"
+          className={`chip chip-toggle${showInspector ? ' chip-active' : ''}`}
+          aria-pressed={showInspector}
+          onClick={onToggleInspector}
+          title={showInspector ? 'Hide inspector' : 'Show inspector'}
+        >
+          {showInspector ? 'Inspector ✓' : '+ Inspector'}
+        </button>
+      </span>
     </section>
   );
 }

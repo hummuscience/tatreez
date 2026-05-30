@@ -425,6 +425,8 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* View toggle group lives at the right end of the cloth bar. */
+.design-clothbar-views { display: inline-flex; gap: 6px; align-items: center; margin-left: auto; }
 .design-clothbar-meta { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); align-self: center; white-space: nowrap; }
 .field-inline { min-width: 110px; }
 
