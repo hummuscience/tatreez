@@ -419,13 +419,22 @@ The Design tab's motif picker uses `<select>` controls inside
 `<div className="design-lib-filters">` and a `design-border-toggle` checkbox, plus
 inline `className="chip chip-toggle"` toggles (no `Chip` component).
 
-IMPORTANT (verified): `library` is `LibEntry[]` (a `useMemo` of `buildLibrary()`),
-where `LibEntry = { key: string; pattern: Pattern; fitW: number; fitH: number }`.
-`filtered` is a `useMemo` whose callback is `library.filter((e) => { const p = e.pattern; ... })`
-(lines ~1837-1853). So inside the predicate, the pattern is `p = e.pattern`, and
-any per-item classification uses `categoriesOf(p)`. There is no clear-all /
-anyFilter boolean in this tab; the empty state is
-`filtered.length === 0 && <p className="design-lib-empty">No motifs match.</p>`.
+IMPORTANT (verified, exact):
+- All filter code lives in the **`DesignComposer`** component.
+- `library` is `LibEntry[]` (`const library = useMemo(() => buildLibrary(), []);`
+  at line ~510), where `LibEntry = { key: string; pattern: Pattern; fitW: number; fitH: number }`.
+- The predicate is a **plain `.filter`** (NOT a `useMemo`):
+  `const filteredLib = library.filter((l) => { const p = l.pattern; ... return true; });`
+  at lines ~1844-1867. The binder is **`l`**, and `p = l.pattern`. New conjuncts
+  use `categoriesOf(p)`.
+- This tab **already has** `const anyFilter = ...` (lines ~1869-1876) and
+  `const clearFilters = () => {...}` (lines ~1878-1886), plus a rendered Clear
+  button gated on `anyFilter` (lines ~2106-2109). Both must learn about `fCats`.
+- Filter UI container is `<div className="design-filterbar">` (line ~2012), using
+  `<select className="design-filter-select">` controls and
+  `<label className="design-fit-toggle">` checkboxes — NO `FilterRow`/`Chip`
+  components, but `className="chip"` is used freely for toggle buttons elsewhere.
+- Empty state: `<p className="empty-hint">No patterns match.</p>` (line ~2123).
 
 - [ ] **Step 1: Import the category API**
 
@@ -465,44 +474,70 @@ at line 378), add:
 - [ ] **Step 3: Per-category counts over the library**
 
 `library` is `LibEntry[]` and `useMemo` is already imported (line 1). Right
-before the `const filtered = useMemo(...)` block (~line 1837), add a memoized
-count map. Iterate `e.pattern`:
+before the `const filteredLib = library.filter(...)` line (~1844), add a memoized
+count map. Iterate `l.pattern`:
 
 ```typescript
   const catCounts = useMemo(() => {
     const counts = {} as Record<Category, number>;
     for (const [key] of CATEGORY_FILTERS) counts[key] = 0;
-    for (const e of library) for (const c of categoriesOf(e.pattern)) counts[c]++;
+    for (const l of library) for (const c of categoriesOf(l.pattern)) counts[c]++;
     return counts;
   }, [library]);
 ```
 
 - [ ] **Step 4: Extend the filter predicate**
 
-In the `filtered` `useMemo` (~lines 1837-1853), the callback is
-`library.filter((e) => { const p = e.pattern; ... })`. Add a category conjunct
-after the `bordersOnly` line, and add `fCats` to the `useMemo` dependency array:
+In `const filteredLib = library.filter((l) => { const p = l.pattern; ... })`
+(~lines 1844-1867), add a category conjunct after the `bordersOnly` line (line
+~1854), before the `fitsActive` block:
 
 ```typescript
-      if (bordersOnly && !isBorderPattern(p)) return false;
-      if (fCats.size > 0) {
-        const cats = categoriesOf(p);
-        if (!cats.some((c) => fCats.has(c))) return false;
-      }
-      return true;
+    if (bordersOnly && !isBorderPattern(p)) return false;
+    if (fCats.size > 0) {
+      const cats = categoriesOf(p);
+      if (!cats.some((c) => fCats.has(c))) return false;
+    }
+    if (fitsActive && activeArea) {
 ```
 
-Dependency array becomes:
+(It's a plain `.filter`, not a `useMemo`, so there is no dependency array to
+update.)
+
+- [ ] **Step 4b: Teach `anyFilter` and `clearFilters` about `fCats`**
+
+The tab already has these (lines ~1869-1886). Add `fCats.size > 0` to
+`anyFilter` and `setFCats(new Set())` to `clearFilters`:
 
 ```typescript
-  }, [library, query, fRegion, fColors, fSize, fComplexity, bordersOnly, fCats]);
+  const anyFilter =
+    query.length > 0 ||
+    fRegion !== null ||
+    fColors !== null ||
+    fSize !== null ||
+    fComplexity !== null ||
+    fitOnly ||
+    bordersOnly ||
+    fCats.size > 0;
+
+  const clearFilters = () => {
+    setQuery('');
+    setFRegion(null);
+    setFColors(null);
+    setFSize(null);
+    setFComplexity(null);
+    setFitOnly(false);
+    setBordersOnly(false);
+    setFCats(new Set());
+  };
 ```
 
 - [ ] **Step 5: Render the category chip row**
 
-Inside `<div className="design-lib-filters">`, after the search `<input>` and
-before the first `<label className="design-filter">` (Region), insert a chip
-row. Use inline `className="chip"` to match this tab's convention:
+Inside `<div className="design-filterbar">` (line ~2012), after the
+`<label className="filter-search">…</label>` search block (closes ~line 2022) and
+before the Region `{regions.length > 0 && (<select …>` block (~line 2024), insert
+a chip row. Use inline `className="chip"` to match this tab's convention:
 
 ```tsx
           <div className="design-cat-chips">
