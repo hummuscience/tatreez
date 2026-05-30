@@ -384,6 +384,40 @@ function DesignComposer({
     });
     setOverflowSuggest(null);
   };
+
+  // Shrink the canvas to a tight fit around all concrete areas (motif or
+  // repeat areas — empty markers are ignored, they're transient drawing
+  // aids). Adds BUFFER stitches of margin on every side so motifs aren't
+  // touching the edge. Shifts every area so the bounding-box top-left lands
+  // at (BUFFER, BUFFER). No-op when the canvas has no painted areas.
+  const fitCanvasToContent = () => {
+    const concrete = design.areas.filter((a) => a.motifs.length > 0 || a.repeat);
+    if (concrete.length === 0) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const a of concrete) {
+      if (a.x < minX) minX = a.x;
+      if (a.y < minY) minY = a.y;
+      if (a.x + a.w > maxX) maxX = a.x + a.w;
+      if (a.y + a.h > maxY) maxY = a.y + a.h;
+    }
+    const dx = BUFFER - minX;
+    const dy = BUFFER - minY;
+    const nextW = (maxX - minX) + BUFFER * 2;
+    const nextH = (maxY - minY) + BUFFER * 2;
+    if (nextW === design.gridW && nextH === design.gridH && dx === 0 && dy === 0) return;
+    const cloth = getCloth(design.clothId);
+    onChange({
+      ...design,
+      gridW: nextW,
+      gridH: nextH,
+      widthCm: cellsToCm(nextW, cloth),
+      heightCm: cellsToCm(nextH, cloth),
+      // Shift every area (including empty markers — they should stay where
+      // they are relative to neighbours) by the same delta so the layout
+      // looks identical, just within a smaller canvas.
+      areas: design.areas.map((a) => ({ ...a, x: a.x + dx, y: a.y + dy })),
+    });
+  };
   // View toggles. Hiding either side widens the canvas (the grid template
   // collapses the dropped column). Persisted so the user's preferred
   // working surface survives a refresh.
@@ -1447,6 +1481,7 @@ function DesignComposer({
         showInspector={showInspector}
         onTogglePatterns={() => setShowPatterns((v) => !v)}
         onToggleInspector={() => setShowInspector((v) => !v)}
+        onFitToContent={fitCanvasToContent}
       />
 
       {/* Filter row: search + compact dropdowns, one line. Hidden when the
@@ -1781,6 +1816,7 @@ function ClothBar({
   showInspector,
   onTogglePatterns,
   onToggleInspector,
+  onFitToContent,
 }: {
   design: Design;
   onChange: (d: Design) => void;
@@ -1789,9 +1825,11 @@ function ClothBar({
   showInspector: boolean;
   onTogglePatterns: () => void;
   onToggleInspector: () => void;
+  onFitToContent: () => void;
 }) {
   const cloth = getCloth(design.clothId);
   const strands = STRAND_OPTIONS.find((s) => s.id === design.strandsId);
+  const hasContent = design.areas.some((a) => a.motifs.length > 0 || a.repeat);
   // Collapsed by default — once cloth/size/strands are picked the user mostly
   // works with the canvas. Persisted so an intentional open survives refresh.
   const [open, setOpen] = useState<boolean>(() => {
@@ -1867,6 +1905,16 @@ function ClothBar({
           >
             Edit
           </button>
+          {hasContent && (
+            <button
+              type="button"
+              className="btn-ghost btn-sm"
+              onClick={onFitToContent}
+              title="Shrink the canvas to a tight fit around the placed patterns"
+            >
+              Fit to content
+            </button>
+          )}
         </>
       )}
       {open && (
@@ -1942,6 +1990,16 @@ function ClothBar({
           <span className="design-clothbar-meta">
             {design.gridW}×{design.gridH} stitches
           </span>
+          {hasContent && (
+            <button
+              type="button"
+              className="btn-ghost btn-sm"
+              onClick={onFitToContent}
+              title="Shrink the canvas to a tight fit around the placed patterns"
+            >
+              Fit to content
+            </button>
+          )}
           <button
             type="button"
             className="btn-ghost btn-sm"
