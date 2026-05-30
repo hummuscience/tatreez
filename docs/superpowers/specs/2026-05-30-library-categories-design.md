@@ -1,110 +1,188 @@
-# Library & Design Motif Categories — Design (WIP)
+# Library & Design Motif Categories — Design
 
 **Date:** 2026-05-30
-**Status:** Brainstorming — category set + key decisions locked; UI wiring not yet specced.
+**Status:** Approved for planning
 
 ## Goal
 
-Add subject-matter **category** filtering to the Library tab and the Design tab's
-motif picker, on top of the existing region / colors / size / complexity filters.
+Add subject-matter **category** filtering to the Library tab and the Design
+tab's motif picker, on top of the existing region / colors / size / complexity
+filters. Also give the Library the same **Borders** toggle the Design tab has,
+so both tabs expose the structural border axis.
 
-## Data analysis (done, grounded in real data)
+## Data analysis (grounded in the real archive)
 
-- Archive: `src/patterns/tirazainArchive.json` is a **flat object keyed by slug**
-  (`{ "<slug>": { name, width, height, cells, palette, source } }`), **NOT**
-  `{motifs:[...]}`. **971 motifs.** 601 have `source.region`.
-- Names are bilingual: `"English desc (n) | Arabic"`. Split on `|`; the English
-  half (lowercased) classifies well. Transliterated Arabic terms appear in the
-  English half too (sarwa, qamar, tayr, etc.), so keyword rules catch a lot.
-- Auto-classification by name keyword reaches ~80% coverage; ~20% "Other".
+- Archive `src/patterns/tirazainArchive.json` is a **flat object keyed by slug**:
+  `{ "<slug>": { name, width, height, cells, palette, source } }` — NOT
+  `{ motifs: [...] }`. **971 motifs.**
+- `name` is a combined bilingual string `"English desc (n) | Arabic"`. The
+  English half (lowercased) classifies well, and transliterated Arabic terms
+  (sarwa, qamar, tayr, …) also appear there.
+- Keyword auto-classification reaches ~80% coverage; the remaining ~20% match no
+  category (the "Other" case = empty tag list, no chip selected matches them).
+- Objects vs Architecture split verified: ~89 vs ~61, only 1 overlap — worth two
+  chips.
 
-## Locked decisions (from the user)
+## Locked decisions
 
-1. **Auto-classify from name** via a shared helper (like the existing
-   `isBorderPattern` in `src/ui/patternFilters.ts`). No data changes; future
-   imports classify automatically.
-2. **Multiple tags per motif** (a motif can match several categories; chips
-   OR-filter).
-3. **Both Library and Design** get the filter (logic written once in
-   `patternFilters.ts`, consumed by both tabs).
-4. **9 subject categories** (Objects split from Architecture — verified 89 vs 61,
-   only 1 overlap).
-5. **Borders stays a SEPARATE toggle** (structural axis, not subject). Reuse the
-   existing `isBorderPattern` / Design-tab borders handling; do NOT fold border
-   into the subject chips.
+1. **Auto-classify from name** via a pure helper in `src/ui/patternFilters.ts`,
+   exactly like the existing `isBorderPattern`. No data changes; future imports
+   classify automatically.
+2. **Multiple tags per motif.** Category chips are multi-select; OR within the
+   category axis.
+3. **Both tabs** get the category filter, sharing one classifier.
+4. **9 subject categories** (Objects separate from Architecture).
+5. **Borders is a separate toggle**, not a subject chip. Reuse `isBorderPattern`.
+   Add the toggle to the Library too (Design already has `bordersOnly`).
+6. **Chip row UI in both tabs** (multi-select), with a **live count per chip**.
 
-## Category set (with approx counts and matching keywords)
+## The classifier (`src/ui/patternFilters.ts`)
 
-Match against the lowercased English name half. Multi-tag.
+```ts
+export type Category =
+  | 'plants' | 'animals' | 'flowers' | 'celestial'
+  | 'geometric' | 'objects' | 'architecture' | 'amulets' | 'food';
 
-1. **Trees & plants** (~166): tree, trees, cypress, sarwa, saro, saru, shajara,
-   nakhl, palm, branch, irq, leaf, leaves, vine, enab, grape, wheat, sonbola
-2. **Animals** (~145): bird, birds, tayr, tair, asafeer, usfour, deek, rooster,
-   dove, hamam, hamama, peacock, tawoos, reesh, feather, feathers, fish, samak,
-   camel, jamal, horse, rabbit, arnab, lion, asad, deer, ghizlan, duck, bat,
-   chicken, dajaja, hoopoe, hudhud, butterfly, scorpion, snake
-3. **Flowers** (~95): flower, flowers, ward, azhar, zahra, zahr, rose, zanbaq,
-   lily, tulip, carnation, qoronfol, clove, blossom, bouquet, narjes
-4. **Celestial** (~83): moon, qamar, star, stars, najma, najmeh, nojoum, nujoom,
-   sun, shams, crescent, hilal
-5. **Geometric** (~116): geometric, disc, discs, aqras, qrs, qors, qowara,
-   qowwara, square, squares, morabaat, triangle, diamond, chevron, zigzag, key,
-   hexagon, octagon
-6. **Objects** (~89): vase, shamadan, candlestick, lamp, lamps, qanadil, cup,
-   finjan, kas, kasaat, glass, glasses, jug, jarra, pitcher, amphora, comb,
-   musht, kohl, makhalah, razor, shafrat, scissors, net, shbak, bottle, salver,
-   chair, kursi, watch, saat, clock
-7. **Architecture** (~61): arch, arches, aqwas, qaws, tent, tents, khiyam,
-   khaymeh, house, bayt, mosque, masjid, mihrab, tile, tiles, balat, window,
-   shubbak, church, kaneesa, gate, gates, bwab, storey, storeys, dome, qubba,
-   tower
-8. **Amulets & symbols** (~53): amulet, amulets, hijab, hijabat, eye, ayn,
-   khamsa, hand, kaff, cross, crosses, saleeb, silban, comb? (comb is in Objects
-   — pick one; suggest Objects)
-9. **Food & drink** (~45): coffee, binn, bean, beans, soap, saboon, fruit,
-   fakha, seeds, bzoor, drink, pomegranate, romman, fig, teen, berries, toot,
-   raisins, zbeeb, chickpeas, humus, apple, toofah, baklava, egg, baydat,
-   prickly pear, sabr
+export interface CategoryDef {
+  key: Category;
+  label: string;    // English chip label
+  labelAr: string;  // Arabic chip label
+  re: RegExp;       // word-boundary keyword match
+}
 
-Border (separate toggle): border, sinsal, nafnoof, nafnof, haashia, hashia,
-dayer, sajj, frame (already in `isBorderPattern`).
+export const CATEGORY_RULES: CategoryDef[];
 
-Note: a few keywords (comb, cross) could match two categories; that's acceptable
-under multi-tag, but assign deliberately to avoid noise.
+/** Subject categories a pattern belongs to (may be empty = "Other"). Multi-tag. */
+export function categoriesOf(p: Pattern): Category[];
+```
 
-## Planned implementation shape (NOT yet user-approved)
+`categoriesOf` builds the same haystack `isBorderPattern` uses —
+`[p.name, p.nameAr, p.source?.originalName, p.source?.arabicName].filter(Boolean).join(' ').toLowerCase()`
+— and returns each `key` whose `re` matches. Rules (word-boundary `\b…\b`,
+case-insensitive):
 
-- **`src/ui/patternFilters.ts`**: add
-  `export type Category = 'plants' | 'animals' | 'flowers' | 'celestial' | 'geometric' | 'objects' | 'architecture' | 'amulets' | 'food'`,
-  a `CATEGORY_RULES: Array<{ key: Category; label: string; labelAr?: string; re: RegExp }>`,
-  and `export function categoriesOf(p: Pattern): Category[]` that tests each rule
-  against the lowercased name (english half) + nameAr/source fields.
-  Add `CATEGORY_FILTERS` label table for the chip row.
-- **Library (`LibraryTab.tsx`)** and **Design (`DesignTab.tsx`)**: add a
-  `Category` `FilterRow` of chips (multi-select set of `Category`), and include
-  it in the existing `archiveFiltered` / library `useMemo` predicate: a motif
-  passes if the selected category set is empty OR `categoriesOf(p)` intersects it.
-  Both tabs already import from `patternFilters.ts` and have a `FilterRow`/`Chip`
-  pattern + a borders toggle to mirror.
-- Filtering predicate stays OR within categories; AND across different filter
-  axes (region, colors, size, complexity, category), matching current behavior.
+- **plants** — `Trees & plants` / `الأشجار والنبات`: tree, trees, cypress,
+  sarwa, saro, saru, shajara, nakhl, palm, branch, irq, leaf, leaves, vine,
+  enab, grape, wheat, sonbola
+- **animals** — `Animals` / `الحيوانات`: bird, birds, tayr, tair, asafeer,
+  usfour, deek, rooster, dove, hamam, hamama, peacock, tawoos, reesh, feather,
+  feathers, fish, samak, camel, jamal, horse, rabbit, arnab, lion, asad, deer,
+  ghizlan, duck, chicken, dajaja, hoopoe, hudhud, butterfly, scorpion, snake
+- **flowers** — `Flowers` / `الأزهار`: flower, flowers, ward, azhar, zahra,
+  zahr, rose, zanbaq, lily, tulip, carnation, qoronfol, clove, blossom, bouquet,
+  narjes
+- **celestial** — `Celestial` / `الأجرام`: moon, qamar, star, stars, najma,
+  najmeh, nojoum, nujoom, sun, shams, crescent, hilal
+- **geometric** — `Geometric` / `هندسي`: geometric, disc, discs, aqras, qrs,
+  qors, qowara, qowwara, square, squares, morabaat, triangle, diamond, chevron,
+  zigzag, hexagon, octagon
+- **objects** — `Objects` / `أدوات`: vase, shamadan, candlestick, lamp, lamps,
+  qanadil, cup, finjan, kas, kasaat, glass, glasses, jug, jarra, pitcher,
+  amphora, comb, musht, kohl, makhalah, razor, shafrat, scissors, net, shbak,
+  bottle, salver, chair, kursi, watch, saat, clock
+- **architecture** — `Architecture` / `عمارة`: arch, arches, aqwas, qaws, tent,
+  tents, khiyam, khaymeh, house, bayt, mosque, masjid, mihrab, tile, tiles,
+  balat, window, shubbak, church, kaneesa, gate, gates, bwab, storey, storeys,
+  dome, qubba, tower
+- **amulets** — `Amulets & symbols` / `تمائم ورموز`: amulet, amulets, hijab,
+  hijabat, eye, ayn, khamsa, hand, kaff, cross, crosses, saleeb, silban
+- **food** — `Food & drink` / `طعام وشراب`: coffee, binn, bean, beans, soap,
+  saboon, fruit, fakha, seeds, bzoor, pomegranate, romman, fig, teen, berries,
+  toot, raisins, zbeeb, chickpeas, humus, apple, toofah, baklava, egg, baydat,
+  sabr
 
-## Open questions for next session
+Disambiguation: `comb` → objects only; `cross`/`saleeb`/`silban` → amulets only.
+`key` words anchored with `\b` to avoid substring false positives (e.g. "sun" in
+"sunbula" is prevented because plants matches `sonbola`/`wheat`, and `\bsun\b`
+won't fire inside another word).
 
-- Confirm the 9 labels + emoji/Arabic labels for the chips.
-- Decide comb/cross assignment (suggest: comb→Objects, cross→Amulets).
-- Whether to show a live count on each category chip (like the region chips do).
-- Multi-select interaction detail: clicking multiple category chips = OR (show
-  motifs in ANY selected category) — confirm that's the desired semantics.
+Also add a shared label table for the chip row:
 
-## Codebase notes (verified)
+```ts
+export const CATEGORY_FILTERS: Array<[Category, string, string]>;
+// [key, label, labelAr], in display order (plants, animals, flowers, celestial,
+//  geometric, objects, architecture, amulets, food)
+```
 
-- `src/ui/patternFilters.ts` exports: norm, matchesQuery, colorCount,
-  paintedCells, paintedSize, isBorderPattern, sizeBucket, complexityBucket,
-  SIZE_FILTERS, COMPLEXITY_FILTERS, COLOR_BUCKETS. Pure, no React — correct home
-  for `categoriesOf`.
-- Both `LibraryTab.tsx` and `DesignTab.tsx` already import these and render
-  `FilterRow` + `Chip` components; Design tab has a `bordersOnly`/`borderMode`
-  toggle to keep consistent with the separate-border decision.
-- Tirazain entries also expose `source.originalName` / `source.arabicName`;
-  the in-file `name` is the `"English | Arabic"` combined string.
+## Library tab (`src/ui/LibraryTab.tsx`)
+
+- New state: `const [archiveCats, setArchiveCats] = useState<Set<Category>>(new Set())`
+  and `const [archiveBorders, setArchiveBorders] = useState(false)`.
+- Precompute `categoriesOf` per archive entry in the existing `archiveData`
+  `useMemo` (store `cats: Category[]` alongside `colors`/`size`/`complexity`),
+  so filtering and counts don't reclassify on every render.
+- Per-chip counts: derive `categoryCounts` (a `Record<Category, number>`) from
+  `archiveData` once via `useMemo` — count entries whose `cats` include each key.
+- Add a **Category** `FilterRow` of chips after Region/Colors/Size/Complexity:
+  one chip per `CATEGORY_FILTERS` entry, showing `label` + `<span class="chip-count">count</span>`
+  (mirrors the Region chips), `active={archiveCats.has(key)}`, toggling
+  membership in the set.
+- Add a **Borders** chip/toggle (single boolean) in its own `FilterRow` labeled
+  "Borders" / "حواشي" — a single active/inactive chip "Borders only".
+- Extend the `archiveFiltered` predicate (AND across axes):
+  - category: `archiveCats.size === 0 || e.cats.some((c) => archiveCats.has(c))`
+  - borders: `!archiveBorders || isBorderPattern(e.pattern)`
+- Extend `archiveIsFiltered` and `archiveClearAll` to include the two new pieces
+  (`archiveCats.size > 0`, `archiveBorders`; clear resets the set to empty and
+  borders to false).
+
+## Design tab (`src/ui/DesignTab.tsx`)
+
+The Design picker currently filters via `<select>` dropdowns + a `bordersOnly`
+checkbox, with a single combined `filtered` predicate (~line 1846) and a
+`anyFilter` flag (~line 1871). Changes:
+
+- New state: `const [fCats, setFCats] = useState<Set<Category>>(new Set())`.
+  Keep the existing `bordersOnly` checkbox unchanged.
+- Add a **Category** chip row (multi-select, with counts) above or alongside the
+  existing filter controls — using the same `Chip`/`FilterRow` pattern the tab
+  already uses elsewhere (or the Library's, kept visually consistent). Counts
+  derived from the tab's library list via `useMemo` over `categoriesOf`.
+- Extend the `filtered` predicate with:
+  `if (fCats.size > 0 && !categoriesOf(p).some((c) => fCats.has(c))) return false;`
+  (Compute `categoriesOf(p)` once per item; the library list is modest.)
+- Extend `anyFilter` to include `fCats.size > 0`, and any "clear filters" action
+  to reset it.
+
+## Filtering semantics (both tabs)
+
+- **OR within the category axis** (any selected category matches).
+- **AND across axes** (query, region, colors, size, complexity, category,
+  borders) — unchanged from today; category and borders are just two more
+  conjuncts.
+- Empty category set = no category constraint (show all).
+
+## Files
+
+**New**
+- `src/ui/patternFilters.test.ts` — unit tests for `categoriesOf` and a couple of
+  `CATEGORY_RULES` sanity checks.
+
+**Edited**
+- `src/ui/patternFilters.ts` — `Category`, `CategoryDef`, `CATEGORY_RULES`,
+  `CATEGORY_FILTERS`, `categoriesOf`.
+- `src/ui/LibraryTab.tsx` — category + borders state, precomputed `cats` and
+  counts, Category + Borders `FilterRow`s, predicate, clear-all.
+- `src/ui/DesignTab.tsx` — category state, chip row with counts, predicate,
+  `anyFilter`/clear update.
+
+## Testing
+
+- Unit-test `categoriesOf` (pure, fast):
+  - "Sarwa / Cypress Tree Ramallah (1) | …" → includes `plants`.
+  - "deek / rooster" → `animals`.
+  - "mazhariya ward / vase of flowers" → includes both `objects` and `flowers`.
+  - a discs/geometric name → `geometric`.
+  - "mother's day / eid al oum" (untagged) → `[]`.
+  - a border name still classifies by subject independently of `isBorderPattern`.
+- Manual run-through in both tabs: toggle multiple category chips (OR), combine
+  with region/size (AND), verify counts, Borders toggle, and clear-all — at
+  desktop and iPad widths.
+
+## Out of scope
+
+- Per-pattern stored `category` overrides (auto-from-name only this pass).
+- Categorizing built-in/saved patterns specially (they run through the same
+  `categoriesOf`; built-ins like coffeeBean→food, cypress→plants will tag
+  naturally).
+- A "People & events" category (too few motifs; stays in Other).
