@@ -168,3 +168,107 @@ export const COMPLEXITY_FILTERS: Array<[ComplexityBucket, string]> = [
 ];
 
 export const COLOR_BUCKETS: ColorBucket[] = [1, 2, 3, 4, 5];
+
+/**
+ * Subject-matter categories. A motif may belong to several (multi-tag) or none
+ * ("Other"). Classification is by keyword match on the motif's name text — the
+ * same approach as {@link isBorderPatternByName}. Border is intentionally NOT a
+ * subject category; it is a separate structural axis (see isBorderPattern).
+ */
+export type Category =
+  | 'plants'
+  | 'animals'
+  | 'flowers'
+  | 'celestial'
+  | 'geometric'
+  | 'objects'
+  | 'architecture'
+  | 'amulets'
+  | 'food';
+
+export interface CategoryDef {
+  key: Category;
+  label: string;
+  labelAr: string;
+  re: RegExp;
+}
+
+/**
+ * One rule per category. Keywords are matched with word boundaries (\b) to
+ * avoid substring false positives, case-insensitively, against the combined
+ * name haystack. Keyword sets were validated against the Tirazain archive;
+ * notably the comb tool uses `mosht`/`musht` (NOT bare `comb`, which collides
+ * with "rooster's comb"), and crosses go to amulets.
+ */
+export const CATEGORY_RULES: CategoryDef[] = [
+  {
+    key: 'plants',
+    label: 'Trees & plants',
+    labelAr: 'الأشجار والنبات',
+    re: /\b(tree|trees|cypress|sarwa|saro|saru|shajara|nakhl|palm|branch|irq|leaf|leaves|vine|enab|grape|wheat|sonbola)\b/i,
+  },
+  {
+    key: 'animals',
+    label: 'Animals',
+    labelAr: 'الحيوانات',
+    re: /\b(bird|birds|tayr|tair|asafeer|usfour|deek|rooster|dove|hamam|hamama|peacock|tawoos|reesh|feather|feathers|fish|samak|camel|jamal|horse|rabbit|arnab|lion|asad|deer|ghizlan|duck|chicken|dajaja|hoopoe|hudhud|butterfly|scorpion|snake)\b/i,
+  },
+  {
+    key: 'flowers',
+    label: 'Flowers',
+    labelAr: 'الأزهار',
+    re: /\b(flower|flowers|ward|azhar|zahra|zahr|rose|zanbaq|lily|tulip|carnation|qoronfol|clove|blossom|bouquet|narjes)\b/i,
+  },
+  {
+    key: 'celestial',
+    label: 'Celestial',
+    labelAr: 'الأجرام',
+    re: /\b(moon|qamar|star|stars|najma|najmeh|nojoum|nujoom|sun|shams|crescent|hilal)\b|(قمر|نجمة|نجوم|شمس|هلال)/i,
+  },
+  {
+    key: 'geometric',
+    label: 'Geometric',
+    labelAr: 'هندسي',
+    re: /\b(geometric|disc|discs|aqras|qrs|qors|qowara|qowwara|square|squares|morabaat|triangle|diamond|chevron|zigzag|hexagon|octagon)\b/i,
+  },
+  {
+    key: 'objects',
+    label: 'Objects',
+    labelAr: 'أدوات',
+    re: /\b(vase|shamadan|candlestick|lamp|lamps|qanadil|cup|finjan|kas|kasaat|glass|glasses|jug|jarra|pitcher|amphora|musht|mosht|kohl|makhalah|razor|shafrat|scissors|net|shbak|bottle|salver|chair|kursi|watch|saat|clock)\b/i,
+  },
+  {
+    key: 'architecture',
+    label: 'Architecture',
+    labelAr: 'عمارة',
+    re: /\b(arch|arches|aqwas|qaws|tent|tents|khiyam|khaymeh|house|bayt|mosque|masjid|mihrab|tile|tiles|balat|window|shubbak|church|kaneesa|gate|gates|bwab|storey|storeys|dome|qubba|tower)\b/i,
+  },
+  {
+    key: 'amulets',
+    label: 'Amulets & symbols',
+    labelAr: 'تمائم ورموز',
+    re: /\b(amulet|amulets|hijab|hijabat|eye|ayn|khamsa|hand|kaff|cross|crosses|saleeb|silban)\b/i,
+  },
+  {
+    key: 'food',
+    label: 'Food & drink',
+    labelAr: 'طعام وشراب',
+    re: /\b(coffee|binn|bean|beans|soap|saboon|fruit|fakha|seeds|bzoor|pomegranate|romman|fig|teen|berries|toot|raisins|zbeeb|chickpeas|humus|apple|toofah|baklava|egg|baydat|sabr)\b/i,
+  },
+];
+
+/** [key, label, labelAr] in display order — for rendering the chip row. */
+export const CATEGORY_FILTERS: Array<[Category, string, string]> =
+  CATEGORY_RULES.map((r): [Category, string, string] => [r.key, r.label, r.labelAr]);
+
+/**
+ * The subject categories a pattern belongs to (possibly empty). Builds the same
+ * haystack as {@link isBorderPatternByName} and returns each category whose rule
+ * matches. Multi-tag: a "vase of flowers" returns both `objects` and `flowers`.
+ */
+export function categoriesOf(p: Pattern): Category[] {
+  const haystack = [p.name, p.nameAr, p.source?.originalName, p.source?.arabicName]
+    .filter(Boolean)
+    .join(' ');
+  return CATEGORY_RULES.filter((r) => r.re.test(haystack)).map((r) => r.key);
+}
