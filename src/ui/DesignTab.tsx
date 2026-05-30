@@ -897,11 +897,37 @@ function DesignComposer({
         draw(); // a click, not a drag — clear preview
         return;
       }
+      const isEmpty = (a: Area) => a.motifs.length === 0 && !a.repeat;
+      // Areas fully enclosed by the dragged rectangle (concrete ones — empty
+      // markers don't count, they'd be swept anyway).
+      const x2 = x + w - 1;
+      const y2 = y + h - 1;
+      const enclosed = design.areas.filter(
+        (a) =>
+          !isEmpty(a) &&
+          a.x >= x &&
+          a.y >= y &&
+          a.x + a.w - 1 <= x2 &&
+          a.y + a.h - 1 <= y2,
+      );
+      if (enclosed.length > 0) {
+        // Draw-around-motifs gesture: skip creating a frame and multi-select
+        // the captured areas instead. The existing rotate-handle / move /
+        // flip group logic then treats them as a single transformable unit.
+        // Also sweep any leftover empty markers so the canvas stays clean.
+        const kept = design.areas.filter((a) => !isEmpty(a));
+        if (kept.length !== design.areas.length) {
+          onChange({ ...design, areas: kept });
+        }
+        setSelectedIds(new Set(enclosed.map((a) => a.id)));
+        setActiveAreaId(enclosed[enclosed.length - 1].id);
+        draw();
+        return;
+      }
       // An empty area is just a "place a motif here later" marker — having
       // several of them on the canvas at once is noise. Sweep the previous
       // empty area(s) so each new mark replaces them. Areas that already
       // hold a motif or a repeat are kept.
-      const isEmpty = (a: Area) => a.motifs.length === 0 && !a.repeat;
       const kept = design.areas.filter((a) => !isEmpty(a));
       const area: Area = {
         id: newId('area'),
