@@ -58,6 +58,15 @@ const SECTIONS: Section[] = [
     ],
   },
   {
+    title: 'Pen, Eraser, Undo',
+    items: [
+      { gesture: 'Pen tool (floating toolbar)', what: 'Tap or drag to paint single cells. Inside a pattern: edits that cell directly. Outside: creates a new "freehand" area to hold your strokes.' },
+      { gesture: 'Pen color', what: 'Quick swatches show the design\'s current colors. Tap "…" to pick any DMC color. The picker remembers your last choice.' },
+      { gesture: 'Eraser tool', what: 'Tap or drag to clear cells (sets them empty). Works inside patterns; no effect on empty canvas.' },
+      { gesture: 'Undo', what: 'Tap the ↶ Undo button or press Cmd/Ctrl+Z. Undoes pen/eraser strokes and color changes. Up to 50 steps remembered.' },
+    ],
+  },
+  {
     title: 'Zoom & pan',
     items: [
       { gesture: 'Pinch (iPad)', what: 'Two-finger pinch on the canvas. Zoom is anchored under your fingers.' },

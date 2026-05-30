@@ -380,6 +380,49 @@ function DesignComposer({
   // Border-draw tool: when on, dragging on the canvas tiles the armed motif
   // along the drag axis instead of marking a filter area.
   const [borderMode, setBorderMode] = useState(false);
+  // Cell-painting tools: pen paints a single cell at the pointer with the
+  // current `penColor`; eraser clears it to empty. Both work on cells inside
+  // an existing area's motif OR create a new tiny "freehand" area on empty
+  // canvas (pen only). Mutually exclusive with border mode and with each
+  // other.
+  type Tool = 'select' | 'pen' | 'eraser';
+  const [tool, setTool] = useState<Tool>('select');
+  const toolRef = useRef<Tool>('select');
+  useEffect(() => { toolRef.current = tool; }, [tool]);
+  // Pen color: defaults to the design's first non-empty palette colour, or
+  // a soft red if the palette is empty. Persisted across strokes.
+  const [penColor, setPenColor] = useState<PaletteColor>({ hex: '#9a0029' });
+  const [penPickerOpen, setPenPickerOpen] = useState(false);
+  /** Switch tool, exclusive with border mode (border = "drag tiles a strip",
+   * pen/eraser = "tap paints a cell"). */
+  const switchTool = (next: Tool) => {
+    setTool(next);
+    if (next !== 'select') setBorderMode(false);
+  };
+
+  // Undo stack: snapshots of `design` taken just before destructive edits
+  // (pen, eraser, color recolor, area delete, etc.). Bounded to MAX_UNDO so
+  // a long session doesn't keep the entire history in memory. Each stroke
+  // (one pointerdown..pointerup gesture) pushes one snapshot, not one per
+  // cell — the gesture's stroke-start marker handles that.
+  const MAX_UNDO = 50;
+  const undoStackRef = useRef<Design[]>([]);
+  const [undoCount, setUndoCount] = useState(0);
+  const pushUndo = (snapshot: Design) => {
+    undoStackRef.current.push(snapshot);
+    if (undoStackRef.current.length > MAX_UNDO) {
+      undoStackRef.current.shift();
+    }
+    setUndoCount(undoStackRef.current.length);
+  };
+  const popUndo = () => {
+    const prev = undoStackRef.current.pop();
+    setUndoCount(undoStackRef.current.length);
+    if (prev) onChange(prev);
+  };
+  // Did the current pointer-down gesture already snapshot? Each pointerdown
+  // resets this so the first cell-edit of the stroke pushes once.
+  const strokeSnapshottedRef = useRef(false);
   // Overflow banner: surfaced when a placed/drawn motif's natural size
   // exceeds the canvas grid. Carries the suggested grow-to size so the
   // banner button can apply it in one tap.
@@ -504,7 +547,9 @@ function DesignComposer({
     // (left/top) or trailing (right/bottom) end. `anchor` is the cell coord
     // of the *fixed* (non-grabbed) end, so the new length is just
     // distance from the anchor to the current pointer.
-    | { kind: 'resizeBorder'; areaId: string; axis: 'h' | 'v'; edge: 'lead' | 'trail'; anchor: number };
+    | { kind: 'resizeBorder'; areaId: string; axis: 'h' | 'v'; edge: 'lead' | 'trail'; anchor: number }
+    // Pen / eraser drag-paint: every pointermove paints the cell it lands on.
+    | { kind: 'paint'; value: ColorIndex; color?: PaletteColor; lastCx: number; lastCy: number };
   const interactionRef = useRef<Interaction | null>(null);
 
   // Canvas fills the residual column width; height follows the cloth aspect
@@ -795,6 +840,7 @@ function DesignComposer({
   // and extends the design palette if needed (other areas keep the old index).
   const recolorActiveArea = (oldIndex: number, color: PaletteColor) => {
     if (!activeArea) return;
+    pushUndo(design);
     const { palette, area } = recolorAreaIndex(activeArea, oldIndex, color, design.palette);
     onChange({
       ...design,
@@ -902,6 +948,9 @@ function DesignComposer({
         e.preventDefault();
       } else if (mod && e.key === 'd' && sel.length > 0) {
         duplicateAreas(sel);
+        e.preventDefault();
+      } else if (mod && e.key === 'z') {
+        popUndo();
         e.preventDefault();
       }
     };
@@ -1036,6 +1085,18 @@ function DesignComposer({
       placeArmedMotif(e.clientX, e.clientY);
       return;
     }
+    // Pen / eraser tool: pointerdown paints the cell under the pointer, then
+    // starts a drag-paint so dragging across cells keeps painting. Pen uses
+    // the current penColor; eraser writes 0.
+    if (toolRef.current === 'pen' || toolRef.current === 'eraser') {
+      const [cx, cy] = cellAt(e.clientX, e.clientY);
+      strokeSnapshottedRef.current = false; // first cell will snapshot
+      const isEraser = toolRef.current === 'eraser';
+      const value: ColorIndex = isEraser ? 0 : (1 as ColorIndex); // placeholder; paintCellAt resolves
+      paintCellAt(cx, cy, value, isEraser ? undefined : penColor);
+      interactionRef.current = { kind: 'paint', value, color: isEraser ? undefined : penColor, lastCx: cx, lastCy: cy };
+      return;
+    }
     const additive = e.shiftKey || e.metaKey || e.ctrlKey;
     const touch = e.pointerType !== 'mouse';
 
@@ -1162,6 +1223,26 @@ function DesignComposer({
         ...design,
         areas: design.areas.map((a) => (a.id === grabbed.id ? next : a)),
       });
+    } else if (it.kind === 'paint') {
+      // Bresenham-style: paint every cell on the line from last to current,
+      // so a fast drag doesn't leave gaps.
+      const [cx, cy] = cellAt(e.clientX, e.clientY);
+      if (cx === it.lastCx && cy === it.lastCy) return;
+      let x0 = it.lastCx, y0 = it.lastCy;
+      const dx = Math.abs(cx - x0), dy = Math.abs(cy - y0);
+      const sx = x0 < cx ? 1 : -1, sy = y0 < cy ? 1 : -1;
+      let err = dx - dy;
+      while (true) {
+        if (x0 !== it.lastCx || y0 !== it.lastCy) {
+          paintCellAt(x0, y0, it.value, it.color);
+        }
+        if (x0 === cx && y0 === cy) break;
+        const e2 = 2 * err;
+        if (e2 > -dy) { err -= dy; x0 += sx; }
+        if (e2 < dx) { err += dx; y0 += sy; }
+      }
+      paintCellAt(cx, cy, it.value, it.color);
+      interactionRef.current = { ...it, lastCx: cx, lastCy: cy };
     } else {
       // rotate: angle from group centre to pointer; Alt snaps to 90° live.
       const [px, py] = pointerPx(e.clientX, e.clientY);
@@ -1345,6 +1426,141 @@ function DesignComposer({
       });
       setActiveAreaId(area.id);
     }
+  };
+
+  // ----- pen / eraser cell painting ----------------------------------------
+  // Resolve a colour to a palette index, appending to the design palette if
+  // it's new (dedupe by case-insensitive hex). Index 0 is reserved for empty.
+  const ensurePaletteIndex = (color: PaletteColor, palette: Palette): { index: ColorIndex; palette: Palette } => {
+    const norm = color.hex.toLowerCase();
+    for (let i = 1; i < palette.length; i++) {
+      if ((palette[i]?.hex ?? '').toLowerCase() === norm) return { index: i as ColorIndex, palette };
+    }
+    const next = palette.slice();
+    next.push(color.dmc ? color : { hex: color.hex });
+    return { index: (next.length - 1) as ColorIndex, palette: next };
+  };
+
+  // Paint or clear a single cell at (cx, cy). `value` is the palette index
+  // to write (0 for eraser, >0 for pen). Mutates the top-most area whose
+  // bbox contains the cell; on empty canvas with the pen, grows or creates a
+  // freehand area to hold the new cell.
+  //
+  // The first call of a stroke (strokeSnapshottedRef === false) takes an
+  // undo snapshot of the current design. Subsequent calls in the same stroke
+  // (drag) don't snapshot again — undo rewinds the whole stroke.
+  const paintCellAt = (cx: number, cy: number, value: ColorIndex, color?: PaletteColor) => {
+    if (cx < 0 || cy < 0 || cx >= design.gridW || cy >= design.gridH) return;
+    // Find the top-most area whose bbox contains the cell. Use bbox here
+    // (not painted-cell hit) so erasing inside a motif's existing blank
+    // padding still works, and painting inside a motif's blank padding
+    // adds a cell there.
+    let targetIdx = -1;
+    for (let i = design.areas.length - 1; i >= 0; i--) {
+      const a = design.areas[i];
+      if (cx >= a.x && cx < a.x + a.w && cy >= a.y && cy < a.y + a.h) {
+        targetIdx = i;
+        break;
+      }
+    }
+    // Eraser on empty canvas: no-op.
+    if (targetIdx === -1 && value === 0) return;
+
+    if (!strokeSnapshottedRef.current) {
+      pushUndo(design);
+      strokeSnapshottedRef.current = true;
+    }
+
+    // Resolve the palette index for the new value, growing the palette if
+    // needed. Eraser writes 0; no palette change required.
+    let nextPalette = design.palette;
+    let writeValue = value;
+    if (value > 0 && color) {
+      const r = ensurePaletteIndex(color, design.palette);
+      nextPalette = r.palette;
+      writeValue = r.index;
+    }
+
+    if (targetIdx === -1) {
+      // Pen on empty canvas: create a 1x1 freehand area at (cx, cy). Later
+      // strokes inside that area's bbox will edit it directly.
+      const area: Area = {
+        id: newId('area'),
+        name: `freehand ${design.areas.length + 1}`,
+        x: cx,
+        y: cy,
+        w: 1,
+        h: 1,
+        motifs: [{ patternKey: '__freehand__', x: 0, y: 0, cells: [[writeValue]] }],
+      };
+      onChange({ ...design, palette: nextPalette, areas: [...design.areas, area] });
+      return;
+    }
+
+    // Edit the top-most area. Borders/repeats are immutable from pen — paint
+    // would only affect the displayed strip locally. For now, skip them.
+    const a = design.areas[targetIdx];
+    if (a.repeat) return;
+    // No motif yet? On an empty marker area, paint creates a motif inside it
+    // — but on the eraser path that's pointless.
+    if (a.motifs.length === 0) {
+      if (value === 0) return;
+      const cells: ColorIndex[][] = Array.from({ length: a.h }, () => new Array<ColorIndex>(a.w).fill(0));
+      cells[cy - a.y][cx - a.x] = writeValue;
+      const next: Area = { ...a, motifs: [{ patternKey: '__freehand__', x: 0, y: 0, cells }] };
+      onChange({
+        ...design,
+        palette: nextPalette,
+        areas: design.areas.map((x, i) => (i === targetIdx ? next : x)),
+      });
+      return;
+    }
+    // Find the motif that owns this cell, or the first one if none does.
+    let motifIdx = -1;
+    const lx = cx - a.x;
+    const ly = cy - a.y;
+    for (let mi = a.motifs.length - 1; mi >= 0; mi--) {
+      const m = a.motifs[mi];
+      const mx = lx - m.x;
+      const my = ly - m.y;
+      if (mx >= 0 && my >= 0 && my < m.cells.length && mx < (m.cells[my]?.length ?? 0)) {
+        motifIdx = mi;
+        break;
+      }
+    }
+    if (motifIdx === -1) {
+      // The cell is in the area bbox but outside any motif: extend the top
+      // motif's cells to cover it. Pad with zeros where needed.
+      if (value === 0) return;
+      motifIdx = a.motifs.length - 1;
+    }
+    const m = a.motifs[motifIdx];
+    // Expand the motif cells if the target cell is outside its current
+    // extent (relative to the motif's own origin in the area).
+    const mx = lx - m.x;
+    const my = ly - m.y;
+    const oldH = m.cells.length;
+    const oldW = oldH > 0 ? m.cells[0].length : 0;
+    const padTop = Math.max(0, -my);
+    const padLeft = Math.max(0, -mx);
+    const padBottom = Math.max(0, my - (oldH - 1));
+    const padRight = Math.max(0, mx - (oldW - 1));
+    const newH = oldH + padTop + padBottom;
+    const newW = oldW + padLeft + padRight;
+    const nextCells: ColorIndex[][] = Array.from({ length: newH }, () => new Array<ColorIndex>(newW).fill(0));
+    for (let y = 0; y < oldH; y++) {
+      for (let x = 0; x < oldW; x++) {
+        nextCells[y + padTop][x + padLeft] = m.cells[y][x];
+      }
+    }
+    nextCells[my + padTop][mx + padLeft] = writeValue;
+    const nextMotif = { ...m, x: m.x - padLeft, y: m.y - padTop, cells: nextCells };
+    const nextMotifs = a.motifs.map((mm, i) => (i === motifIdx ? nextMotif : mm));
+    onChange({
+      ...design,
+      palette: nextPalette,
+      areas: design.areas.map((x, i) => (i === targetIdx ? { ...a, motifs: nextMotifs } : x)),
+    });
   };
 
   // ----- place a library motif at a canvas position --------------------------
@@ -1843,6 +2059,85 @@ function DesignComposer({
         )}
 
         <div className="design-canvas-wrap" ref={wrapRef}>
+          {/* Floating tool palette: pinned to the canvas top-left. Holds
+              the select / pen / eraser / border switches, a pen-colour
+              swatch (when pen is active), and an undo button. */}
+          <div className="design-tools" role="toolbar" aria-label="Drawing tools">
+            <button
+              type="button"
+              className={`chip chip-toggle${tool === 'select' && !borderMode ? ' chip-active' : ''}`}
+              aria-pressed={tool === 'select' && !borderMode}
+              onClick={() => switchTool('select')}
+              title="Select / move (default)"
+            >
+              ✥
+            </button>
+            <button
+              type="button"
+              className={`chip chip-toggle${tool === 'pen' ? ' chip-active' : ''}`}
+              aria-pressed={tool === 'pen'}
+              onClick={() => switchTool(tool === 'pen' ? 'select' : 'pen')}
+              title="Pen — paint cells"
+            >
+              ✎ Pen
+            </button>
+            <button
+              type="button"
+              className={`chip chip-toggle${tool === 'eraser' ? ' chip-active' : ''}`}
+              aria-pressed={tool === 'eraser'}
+              onClick={() => switchTool(tool === 'eraser' ? 'select' : 'eraser')}
+              title="Eraser — clear cells"
+            >
+              ⌫ Eraser
+            </button>
+            {tool === 'pen' && (
+              <>
+                <span className="design-tools-sep" aria-hidden="true" />
+                {/* Up to 8 most recently used colors from the design palette
+                    as quick swatches. Tap to switch the pen color. */}
+                {design.palette.slice(1).filter((c) => c != null).slice(0, 8).map((c, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    className={`design-tools-swatch${penColor.hex.toLowerCase() === (c?.hex ?? '').toLowerCase() ? ' design-tools-swatch-on' : ''}`}
+                    style={{ background: c?.hex ?? '#fff' }}
+                    onClick={() => setPenColor(c!)}
+                    title={c?.dmc ? `DMC ${c.dmc.number} · ${c.dmc.name}` : c?.hex ?? ''}
+                    aria-label={c?.dmc ? `DMC ${c.dmc.number}` : c?.hex ?? ''}
+                  />
+                ))}
+                <button
+                  type="button"
+                  className="chip btn-sm"
+                  onClick={() => setPenPickerOpen(true)}
+                  title="Pick a DMC color"
+                >
+                  …
+                </button>
+              </>
+            )}
+            <span className="design-tools-sep" aria-hidden="true" />
+            <button
+              type="button"
+              className="chip btn-sm"
+              disabled={undoCount === 0}
+              onClick={popUndo}
+              title="Undo last edit (Cmd/Ctrl+Z)"
+            >
+              ↶ Undo
+            </button>
+          </div>
+          {penPickerOpen && (
+            <ColorReplacePopover
+              current={penColor}
+              libraryNumbers={libraryNumbers}
+              onPick={(c) => {
+                setPenColor(c);
+                setPenPickerOpen(false);
+              }}
+              onClose={() => setPenPickerOpen(false)}
+            />
+          )}
           {overflowSuggest && (
             <div className="design-overflow-banner" role="status">
               <span>
