@@ -424,9 +424,18 @@ function DesignComposer({
     setUndoCount(undoStackRef.current.length);
     if (prev) onChange(prev);
   };
-  // Did the current pointer-down gesture already snapshot? Each pointerdown
-  // resets this so the first cell-edit of the stroke pushes once.
-  const strokeSnapshottedRef = useRef(false);
+  // Has the current pointer-down gesture already snapshotted? Each
+  // pointerdown resets this so the first mutating event in the gesture
+  // (a pen cell, a move tick, a resize tick, a marquee commit) pushes one
+  // undo entry — and only one, no matter how many frames the drag takes.
+  const gestureSnapshottedRef = useRef(false);
+  // Snapshot lazily — call from any handler that's about to mutate `design`
+  // during a drag. Idempotent within a single gesture.
+  const snapshotForGesture = () => {
+    if (gestureSnapshottedRef.current) return;
+    pushUndo(design);
+    gestureSnapshottedRef.current = true;
+  };
   // Overflow banner: surfaced when a placed/drawn motif's natural size
   // exceeds the canvas grid. Carries the suggested grow-to size so the
   // banner button can apply it in one tap.
@@ -912,6 +921,7 @@ function DesignComposer({
         y: Math.max(0, Math.min(ny, design.gridH - rotated.h)),
       };
     });
+    pushUndo(design);
     onChange({ ...design, areas });
   };
 
@@ -919,6 +929,7 @@ function DesignComposer({
   // and select the copies. Used by the keyboard paste and inspector button.
   const duplicateAreas = (srcs: Area[]): Area[] => {
     if (srcs.length === 0) return [];
+    pushUndo(design);
     const off = 2;
     const copies = srcs.map((src) => ({
       ...src,
@@ -1059,6 +1070,7 @@ function DesignComposer({
   const deleteArea = (a: Area) => {
     const isEmpty = a.motifs.length === 0 && !a.repeat;
     if (!isEmpty && !confirm(`Delete area "${a.name}"?`)) return;
+    pushUndo(design);
     onChange({ ...design, areas: design.areas.filter((x) => x.id !== a.id) });
     setSelectedIds((cur) => {
       const next = new Set(cur);
@@ -1077,6 +1089,9 @@ function DesignComposer({
     // Two-finger pinch is handled separately — let the pinch effect see
     // both pointers and skip the selection logic.
     if (registerPinchPointer(e)) return;
+    // New gesture: allow one undo snapshot for the first mutation that
+    // happens during this drag.
+    gestureSnapshottedRef.current = false;
     // Capture this pointer so move/up keep firing even if the finger drags
     // outside the canvas; without it iPad gives us a single down and never
     // the matching up.
@@ -1094,7 +1109,6 @@ function DesignComposer({
     // the current penColor; eraser writes 0.
     if (toolRef.current === 'pen' || toolRef.current === 'eraser') {
       const [cx, cy] = cellAt(e.clientX, e.clientY);
-      strokeSnapshottedRef.current = false; // first cell will snapshot
       const isEraser = toolRef.current === 'eraser';
       const value: ColorIndex = isEraser ? 0 : (1 as ColorIndex); // placeholder; paintCellAt resolves
       paintCellAt(cx, cy, value, isEraser ? undefined : penColor);
@@ -1206,6 +1220,7 @@ function DesignComposer({
         dy = Math.max(-a.y, Math.min(dy, design.gridH - a.h - a.y));
       }
       if (dx === 0 && dy === 0) return;
+      snapshotForGesture();
       onChange({
         ...design,
         areas: design.areas.map((a) =>
@@ -1223,6 +1238,7 @@ function DesignComposer({
       const pointerCell = it.axis === 'h' ? cx : cy;
       const next = retileBorder(grabbed, it.axis, it.edge, it.anchor, pointerCell);
       if (next.w === grabbed.w && next.h === grabbed.h && next.x === grabbed.x && next.y === grabbed.y) return;
+      snapshotForGesture();
       onChange({
         ...design,
         areas: design.areas.map((a) => (a.id === grabbed.id ? next : a)),
@@ -1257,6 +1273,20 @@ function DesignComposer({
       interactionRef.current = { ...it, angle };
       draw();
     }
+  };
+
+  /** Pointer was cancelled by the OS (most commonly: iOS Safari fired
+   * gesturestart because a second finger landed). Abandon the in-flight
+   * interaction WITHOUT committing it — the previous behaviour would
+   * commit a half-drag marquee as an empty area, creating ghost areas
+   * whenever the user started a two-finger pinch. */
+  const onPointerCancel = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (pinchPointersRef.current.has(e.pointerId)) {
+      endPinch(e);
+      return;
+    }
+    interactionRef.current = null;
+    draw();
   };
 
   const onPointerUp = (e?: React.PointerEvent<HTMLCanvasElement>) => {
@@ -1370,6 +1400,7 @@ function DesignComposer({
             // motif's own bounds may extend past `aw`; that's fine, the
             // canvas painter clips it.
             void mh;
+            snapshotForGesture();
             onChange({ ...design, palette: merged.palette, areas: [...design.areas, area] });
             selectOne(area.id);
             // Disarm the placed motif: re-arming is a one-tap action, but
@@ -1403,6 +1434,7 @@ function DesignComposer({
         // Also sweep any leftover empty markers so the canvas stays clean.
         const kept = design.areas.filter((a) => !isEmpty(a));
         if (kept.length !== design.areas.length) {
+          snapshotForGesture();
           onChange({ ...design, areas: kept });
         }
         setSelectedIds(new Set(enclosed.map((a) => a.id)));
@@ -1424,6 +1456,7 @@ function DesignComposer({
         h,
         motifs: [],
       };
+      snapshotForGesture();
       onChange({ ...design, areas: [...kept, area] });
       // Clear any stale selection/active pointer to a swept area.
       setSelectedIds((cur) => {
@@ -1454,7 +1487,7 @@ function DesignComposer({
   // bbox contains the cell; on empty canvas with the pen, grows or creates a
   // freehand area to hold the new cell.
   //
-  // The first call of a stroke (strokeSnapshottedRef === false) takes an
+  // The first mutating call of a gesture takes an
   // undo snapshot of the current design. Subsequent calls in the same stroke
   // (drag) don't snapshot again — undo rewinds the whole stroke.
   const paintCellAt = (cx: number, cy: number, value: ColorIndex, color?: PaletteColor) => {
@@ -1474,10 +1507,7 @@ function DesignComposer({
     // Eraser on empty canvas: no-op.
     if (targetIdx === -1 && value === 0) return;
 
-    if (!strokeSnapshottedRef.current) {
-      pushUndo(design);
-      strokeSnapshottedRef.current = true;
-    }
+    snapshotForGesture();
 
     // Resolve the palette index for the new value, growing the palette if
     // needed. Eraser writes 0; no palette change required.
@@ -1578,6 +1608,8 @@ function DesignComposer({
     const entry = library.find((l) => l.key === key);
     if (!entry) return;
     const [cx, cy] = cellAt(clientX, clientY);
+    // Adding a pattern to the canvas is an undoable edit.
+    snapshotForGesture();
 
     const merged = mergePalette(design.palette, patternPalette(entry.pattern));
     // Trim the source chart's blank margins so the area hugs the visible motif.
@@ -1639,6 +1671,9 @@ function DesignComposer({
   // touches, so the tap-arm path below is the iPad equivalent.
   const onDrop = (e: React.DragEvent<HTMLCanvasElement>) => {
     e.preventDefault();
+    // HTML5 DnD has no pointerdown, so reset the gesture flag here so
+    // placeMotifAt's snapshotForGesture() actually pushes an undo entry.
+    gestureSnapshottedRef.current = false;
     const key = e.dataTransfer.getData('text/plain');
     placeMotifAt(key, e.clientX, e.clientY);
   };
@@ -2210,7 +2245,7 @@ function DesignComposer({
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={(e) => onPointerUp(e)}
-              onPointerCancel={(e) => onPointerUp(e)}
+              onPointerCancel={onPointerCancel}
               onPointerLeave={(e) => {
                 if (interactionRef.current) onPointerUp(e);
               }}
@@ -2265,6 +2300,7 @@ function DesignComposer({
               onRotate={() => rotateGroup(1)}
               onFlip={(axis) => {
                 const f = axis === 'x' ? flipX : flipY;
+                pushUndo(design);
                 onChange({
                   ...design,
                   areas: design.areas.map((a) =>
@@ -2280,6 +2316,7 @@ function DesignComposer({
               }}
               onDuplicate={() => duplicateAreas(selectedAreas())}
               onDeleteArea={() => {
+                pushUndo(design);
                 onChange({ ...design, areas: design.areas.filter((a) => !selectedIds.has(a.id)) });
                 selectOne(null);
               }}
