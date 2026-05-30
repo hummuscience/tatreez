@@ -26,6 +26,7 @@ import {
 } from '../project/design';
 import { libraryDmcNumbers } from '../patterns/dmcCatalog';
 import ColorReplacePopover from './ColorReplacePopover';
+import DesignHelp from './DesignHelp';
 import {
   CLOTH_OPTIONS,
   DEFAULT_CLOTH_ID,
@@ -449,6 +450,7 @@ function DesignComposer({
   // Default both panels OFF so a first-time visitor lands on a wide canvas;
   // the user opens what they need. Choices persist (storage value '1' = on,
   // '0' = off; absence = default off).
+  const [helpOpen, setHelpOpen] = useState(false);
   const [showPatterns, setShowPatterns] = useState<boolean>(() => {
     try { return localStorage.getItem('design:showPatterns') === '1'; } catch { return false; }
   });
@@ -1657,6 +1659,7 @@ function DesignComposer({
 
   return (
     <div className="design-composer">
+      {helpOpen && <DesignHelp onClose={() => setHelpOpen(false)} />}
       {/* One header bar: ← Designs · name · cloth/size/strands summary or
           edit form · view toggles. Everything project-level lives here so
           the row above the canvas is a single shelf, not two. */}
@@ -1669,6 +1672,7 @@ function DesignComposer({
         onTogglePatterns={() => setShowPatterns((v) => !v)}
         onToggleInspector={() => setShowInspector((v) => !v)}
         onFitToContent={fitCanvasToContent}
+        onOpenHelp={() => setHelpOpen(true)}
       />
 
       {/* Filter row: search + compact dropdowns, one line. Hidden when the
@@ -2004,6 +2008,7 @@ function ClothBar({
   onTogglePatterns,
   onToggleInspector,
   onFitToContent,
+  onOpenHelp,
 }: {
   design: Design;
   onChange: (d: Design) => void;
@@ -2013,6 +2018,7 @@ function ClothBar({
   onTogglePatterns: () => void;
   onToggleInspector: () => void;
   onFitToContent: () => void;
+  onOpenHelp: () => void;
 }) {
   const cloth = getCloth(design.clothId);
   const strands = STRAND_OPTIONS.find((s) => s.id === design.strandsId);
@@ -2219,6 +2225,15 @@ function ClothBar({
         >
           {showInspector ? 'Inspector ✓' : '+ Inspector'}
         </button>
+        <button
+          type="button"
+          className="help-toggle"
+          onClick={onOpenHelp}
+          aria-label="Show help"
+          title="How does this work?"
+        >
+          ?
+        </button>
       </span>
     </section>
   );
@@ -2250,32 +2265,14 @@ function AreaInspector({
   onRecolor: (oldIndex: number, color: PaletteColor) => void;
   updateArea: (id: string, fn: (a: Area) => Area) => void;
 } & AreaActions) {
-  const [helpOpen, setHelpOpen] = useState(false);
+  // The inspector's old "?" toggle was superseded by the global help modal
+  // accessible from the cloth bar's "?" button — keep the header clean here.
   return (
     <section className="panel">
       <div className="panel-h">
         <span>{selectedCount > 1 ? `${selectedCount} areas` : 'Area'}</span>
-        {/* Right side: Arabic label + tiny ? toggle for the usage hint.
-            Wrapped together so .panel-h's space-between layout still works. */}
-        <span className="panel-h-right">
-          <span dir="rtl">المنطقة</span>
-          <button
-            type="button"
-            className={`help-toggle${helpOpen ? ' help-toggle-on' : ''}`}
-            aria-pressed={helpOpen}
-            aria-label="How to use areas"
-            title="How to use areas"
-            onClick={() => setHelpOpen((v) => !v)}
-          >
-            ?
-          </button>
-        </span>
+        <span dir="rtl">المنطقة</span>
       </div>
-      {helpOpen && (
-        <p className="empty-hint">
-          Drop or tap a pattern on the canvas, then click it. Shift-click or drag a box to select several.
-        </p>
-      )}
       {area && (
         <AreaPanel
           area={area}
