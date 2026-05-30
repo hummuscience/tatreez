@@ -460,9 +460,9 @@ body {
   box-shadow: var(--shadow);
   max-width: 720px;
   width: 100%;
+  /* Shrink to content. Scrolls if the content exceeds the viewport. */
   max-height: 90vh;
-  display: flex; flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
 }
 .design-help-head {
   display: flex;
@@ -470,6 +470,11 @@ body {
   justify-content: space-between;
   padding: 16px 20px;
   border-bottom: 1px solid var(--rule);
+  /* Stick to the top while the modal scrolls so Close is always reachable. */
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
 }
 .design-help-head h2 {
   margin: 0;
@@ -478,7 +483,7 @@ body {
   font-weight: var(--display-weight);
   color: var(--ink);
 }
-.design-help-body { overflow-y: auto; padding: 20px; }
+.design-help-body { padding: 20px; }
 .design-help-section + .design-help-section { margin-top: 22px; }
 .design-help-section h3 {
   margin: 0 0 10px;
