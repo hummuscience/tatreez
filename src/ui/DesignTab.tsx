@@ -425,9 +425,14 @@ function DesignComposer({
 
   // Pixel length of the rotate handle's stem above an area.
   const HANDLE_STEM = 22;
-  const HANDLE_HIT = 9;
+  // Mouse pointers get a 9px radius (precise); fingertip and pencil get a
+  // much larger one (~30px) because the visible handle is hard to land on
+  // with a fat tip. The drawn knob stays the same; this is invisible slack.
+  const HANDLE_HIT_MOUSE = 9;
+  const HANDLE_HIT_TOUCH = 30;
   // Radius of the per-area delete (×) button, drawn at the top-right corner.
   const DELETE_R = 8;
+  const DELETE_R_TOUCH = 22;
   const deleteButtonCenter = (a: Area) => ({ cx: (a.x + a.w) * cs, cy: a.y * cs });
 
   // ----- rendering -----
@@ -586,13 +591,20 @@ function DesignComposer({
   };
 
   // Does the pointer hit the selection's rotate knob (above its bbox)?
-  const overRotateHandle = (clientX: number, clientY: number): boolean => {
+  // `pointerType` is used to grow the invisible hit radius for touch/pen so
+  // a fingertip can actually grab the knob (the rendered knob is small).
+  const overRotateHandle = (
+    clientX: number,
+    clientY: number,
+    pointerType: string = 'mouse',
+  ): boolean => {
     const box = selectionBox();
     if (!box) return false;
     const [px, py] = pointerPx(clientX, clientY);
     const hx = (box.x + box.w / 2) * cs;
     const hy = box.y * cs - HANDLE_STEM;
-    return Math.hypot(px - hx, py - hy) <= HANDLE_HIT;
+    const r = pointerType === 'mouse' ? HANDLE_HIT_MOUSE : HANDLE_HIT_TOUCH;
+    return Math.hypot(px - hx, py - hy) <= r;
   };
 
   const updateArea = (id: string, fn: (a: Area) => Area) => {
@@ -753,14 +765,18 @@ function DesignComposer({
       return;
     }
     const additive = e.shiftKey || e.metaKey || e.ctrlKey;
+    const touch = e.pointerType !== 'mouse';
 
     // Delete (×) button on a selected area takes priority over everything.
+    // Use a fingertip-sized hit on touch/pen so the delete button is
+    // actually tappable; mouse keeps the precise radius.
     {
       const [px, py] = pointerPx(e.clientX, e.clientY);
+      const r = touch ? DELETE_R_TOUCH : DELETE_R + 2;
       for (const a of design.areas) {
         if (!selectedIds.has(a.id)) continue;
         const { cx: bx, cy: by } = deleteButtonCenter(a);
-        if (Math.hypot(px - bx, py - by) <= DELETE_R + 2) {
+        if (Math.hypot(px - bx, py - by) <= r) {
           deleteArea(a);
           return;
         }
@@ -768,7 +784,7 @@ function DesignComposer({
     }
 
     // Rotate handle (on the selection) takes priority over body hits.
-    if (overRotateHandle(e.clientX, e.clientY)) {
+    if (overRotateHandle(e.clientX, e.clientY, e.pointerType)) {
       const box = selectionBox();
       if (box) {
         interactionRef.current = {
@@ -1466,15 +1482,42 @@ function MotifCard({
   armed: boolean;
   onArm: (key: string) => void;
 }) {
+  // Track whether the current down-up sequence already armed the motif from
+  // pointerdown (touch/pen path). The subsequent `click` would otherwise
+  // toggle it back off — we skip the click handler in that case.
+  const armedInGestureRef = useRef(false);
   return (
     <div
       className={`design-lib-card${armed ? ' design-lib-card-armed' : ''}`}
       draggable
+      // HTML5 drag-and-drop on iPad is unreliable for Apple Pencil and
+      // doesn't fire at all for fingers. We disable `draggable` on touch and
+      // pen at pointerdown time so iPad never starts a half-broken drag,
+      // and arm the motif right then (rather than waiting for `click`,
+      // which doesn't fire if the user dragged the pen). Mouse keeps native
+      // HTML5 drag-and-drop and arms via `onClick`.
+      onPointerDown={(e) => {
+        const el = e.currentTarget as HTMLDivElement;
+        if (e.pointerType !== 'mouse') {
+          el.draggable = false;
+          armedInGestureRef.current = true;
+          onArm(entry.key);
+        } else {
+          el.draggable = true;
+          armedInGestureRef.current = false;
+        }
+      }}
       onDragStart={(e) => {
         e.dataTransfer.setData('text/plain', entry.key);
         e.dataTransfer.effectAllowed = 'copy';
       }}
-      onClick={() => onArm(entry.key)}
+      onClick={() => {
+        if (armedInGestureRef.current) {
+          armedInGestureRef.current = false;
+          return; // already armed from pointerdown — don't toggle off
+        }
+        onArm(entry.key);
+      }}
       title={`${entry.pattern.name} · ${entry.pattern.width}×${entry.pattern.height}`}
     >
       <PatternThumb pattern={entry.pattern} width={104} height={82} />
