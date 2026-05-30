@@ -577,3 +577,134 @@ body {
   /* Make sure no individual element forces horizontal scroll. */
   body, .tt { overflow-x: hidden; }
 }
+
+/* ---- Pattern detail slide-over ---- */
+.pd-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: flex-end;
+}
+.pd-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+.pd-panel {
+  position: relative;
+  width: min(420px, 92vw);
+  height: 100%;
+  overflow-y: auto;
+  background: var(--paper);
+  border-left: 1px solid var(--line);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.18);
+  padding: 20px;
+  box-sizing: border-box;
+}
+.pd-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  border: 0;
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--ink);
+}
+.pd-head {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin: 8px 0 4px;
+}
+.pd-thumb {
+  width: 110px;
+  flex: 0 0 auto;
+}
+.pd-titles {
+  min-width: 0;
+}
+.pd-name {
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--ink);
+}
+.pd-name-ar {
+  font-size: 14px;
+  color: var(--muted);
+}
+.pd-sub {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.pd-section {
+  margin-top: 18px;
+}
+.pd-h {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin: 0 0 6px;
+}
+.pd-desc {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.pd-details {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink);
+}
+.pd-details dt {
+  color: var(--muted);
+}
+.pd-details dd {
+  margin: 0;
+}
+.pd-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 22px;
+}
+.pd-actions .btn-primary {
+  flex: 1 1 45%;
+}
+.pd-actions .btn-ghost {
+  flex: 1 1 45%;
+}
+.pd-picker {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pd-picker-h {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.pd-picker-item {
+  text-align: left;
+}

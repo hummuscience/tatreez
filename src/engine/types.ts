@@ -106,6 +106,13 @@ export interface Pattern {
    * Mirrors the existing `source.region` (English) when both are present.
    */
   regionAr?: string;
+  /**
+   * Optional human-readable description of the motif: what it depicts, its
+   * cultural meaning, or notes for the stitcher. Shown on the pattern detail
+   * panel. Built-in patterns provide this in code; imported/saved patterns
+   * may omit it (the panel hides the block when absent).
+   */
+  description?: string;
 }
 
 export interface Score {

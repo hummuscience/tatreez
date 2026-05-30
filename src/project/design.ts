@@ -11,7 +11,7 @@
 import type { ColorIndex, Palette, PaletteColor, Pattern } from '../engine/types';
 import { getPaletteColors } from '../patterns/builtin';
 import { colorFromHex } from '../patterns/dmcCatalog';
-import type { ClothOption } from './cloth';
+import { getCloth, DEFAULT_STRANDS_ID, type ClothOption } from './cloth';
 
 export interface PlacedMotif {
   /** Library reference (builtin / saved / tirazain key) for provenance. */
@@ -460,4 +460,74 @@ let idCounter = 0;
 export function newId(prefix: string): string {
   idCounter += 1;
   return `${prefix}_${Date.now().toString(36)}_${idCounter.toString(36)}`;
+}
+
+/** Minimal library entry `placeMotif` needs: a key for provenance and the source pattern. */
+export interface MotifEntry {
+  key: string;
+  pattern: Pattern;
+}
+
+/**
+ * Add a motif to a design as a new tight area whose top-left sits at grid cell
+ * (cx, cy), clamped on-grid. The motif's palette is merged into the design
+ * palette and its cells remapped + trimmed to the painted bounding box. Pure:
+ * returns a new Design, never mutating the input.
+ *
+ * This is the "new area from a motif" path shared by the Design tab's
+ * drag/drop placement and the library "Add to design" handoff. The
+ * empty-marked-area and repeat-area drop variants stay in the Design tab
+ * because they need pointer/target context.
+ */
+export function placeMotif(
+  design: Design,
+  entry: MotifEntry,
+  cx: number,
+  cy: number,
+): Design {
+  const merged = mergePalette(design.palette, patternPalette(entry.pattern));
+  const cells = trimCells(remapCells(entry.pattern.cells, merged.indexMap));
+  const mh = cells.length;
+  const mw = mh > 0 ? cells[0].length : 1;
+  const w = Math.min(mw, design.gridW);
+  const h = Math.min(mh, design.gridH);
+  const ax = Math.max(0, Math.min(cx, design.gridW - w));
+  const ay = Math.max(0, Math.min(cy, design.gridH - h));
+  const area: Area = {
+    id: newId('area'),
+    name: entry.pattern.name || 'motif',
+    x: ax,
+    y: ay,
+    w,
+    h,
+    motifs: [{ patternKey: entry.key, cells, x: 0, y: 0 }],
+  };
+  return { ...design, palette: merged.palette, areas: [...design.areas, area] };
+}
+
+/**
+ * Build a new, empty Design from human inputs. Computes the derived grid size
+ * from the cloth so callers don't repeat that. `name` is trimmed; a blank name
+ * falls back to 'Untitled design'. strandsId defaults to the app default.
+ */
+export function createDesign(opts: {
+  name?: string;
+  clothId: string;
+  widthCm: number;
+  heightCm: number;
+  strandsId?: string;
+}): Design {
+  const cloth = getCloth(opts.clothId);
+  return {
+    id: newId('design'),
+    name: (opts.name ?? '').trim() || 'Untitled design',
+    clothId: opts.clothId,
+    strandsId: opts.strandsId ?? DEFAULT_STRANDS_ID,
+    widthCm: opts.widthCm,
+    heightCm: opts.heightCm,
+    gridW: cmToCells(opts.widthCm, cloth),
+    gridH: cmToCells(opts.heightCm, cloth),
+    areas: [],
+    palette: [null],
+  };
 }

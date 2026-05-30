@@ -9,6 +9,7 @@ import {
   cmToCells,
   composeBorder,
   compositeArea,
+  createDesign,
   decomposeBorder,
   flipX,
   flipY,
@@ -16,6 +17,7 @@ import {
   mergePalette,
   newId,
   patternPalette,
+  placeMotif,
   recolorAreaIndex,
   remapCells,
   repeatFit,
@@ -27,7 +29,6 @@ import ColorReplacePopover from './ColorReplacePopover';
 import {
   CLOTH_OPTIONS,
   DEFAULT_CLOTH_ID,
-  DEFAULT_STRANDS_ID,
   STRAND_OPTIONS,
   getCloth,
 } from '../project/cloth';
@@ -77,6 +78,14 @@ interface Props {
   /** Route a composited area to the Plan tab. */
   onPlanArea: (pattern: Pattern, key: string) => void;
   showToast: (msg: string) => void;
+  /**
+   * A motif handed off from the library "Add to design" action: open this
+   * design and auto-place the motif as a new area. Null when there's nothing
+   * pending.
+   */
+  pendingMotif?: { key: string; pattern: Pattern; designId: string } | null;
+  /** Called once the pending motif has been placed, so the parent can clear it. */
+  onConsumedMotif?: () => void;
 }
 
 /** A library entry the browser can show and drag. */
@@ -101,13 +110,39 @@ function buildLibrary(): LibEntry[] {
   return out;
 }
 
-export default function DesignTab({ onPlanArea }: Props) {
+export default function DesignTab({
+  onPlanArea,
+  pendingMotif,
+  onConsumedMotif,
+}: Props) {
   const [designs, setDesigns] = useState<Design[]>([]);
   const [design, setDesign] = useState<Design | null>(null);
 
   useEffect(() => {
     setDesigns(listDesigns());
   }, []);
+
+  // Consume a motif handed off from the library "Add to design" action: open
+  // the chosen design (from storage so it's the persisted copy) and place the
+  // motif as a new area, then tell the parent we've consumed it.
+  useEffect(() => {
+    if (!pendingMotif) return;
+    const target = listDesigns().find((d) => d.id === pendingMotif.designId);
+    if (!target) {
+      onConsumedMotif?.();
+      return;
+    }
+    const next = placeMotif(
+      target,
+      { key: pendingMotif.key, pattern: pendingMotif.pattern },
+      0,
+      0,
+    );
+    setDesign(next); // the persist effect saves it and refreshes the list
+    onConsumedMotif?.();
+    // Re-run only when a new motif arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingMotif]);
 
   // Persist whenever the open design changes (debounced lightly via effect).
   useEffect(() => {
@@ -185,19 +220,7 @@ function DesignList({
   };
 
   const create = () => {
-    const d: Design = {
-      id: newId('design'),
-      name: name.trim() || 'Untitled design',
-      clothId,
-      strandsId: DEFAULT_STRANDS_ID,
-      widthCm,
-      heightCm,
-      gridW,
-      gridH,
-      areas: [],
-      palette: [null],
-    };
-    onCreate(d);
+    onCreate(createDesign({ name, clothId, widthCm, heightCm }));
   };
 
   return (
@@ -1190,21 +1213,11 @@ function DesignComposer({
       return;
     }
 
-    // Otherwise create a new tight area hugging the motif, positioned at the
-    // drop point and clamped on-grid. Size = trimmed motif dimensions.
-    const ax = Math.max(0, Math.min(cx, design.gridW - w));
-    const ay = Math.max(0, Math.min(cy, design.gridH - h));
-    const area: Area = {
-      id: newId('area'),
-      name: entry.pattern.name || 'motif',
-      x: ax,
-      y: ay,
-      w,
-      h,
-      motifs: [{ patternKey: key, cells, x: 0, y: 0 }],
-    };
-    onChange({ ...design, palette: merged.palette, areas: [...design.areas, area] });
-    selectOne(area.id);
+    // Otherwise create a new tight area hugging the motif via the shared
+    // pure helper, then select it.
+    const next = placeMotif(design, { key, pattern: entry.pattern }, cx, cy);
+    onChange(next);
+    selectOne(next.areas[next.areas.length - 1].id);
   };
 
   // Desktop: HTML5 drag-and-drop. iOS Safari does not fire drag events for

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Pattern } from './engine/types';
-import { emptyPattern } from './patterns/builtin';
+import { clonePattern, emptyPattern } from './patterns/builtin';
 import { useToast } from './ui/useToast';
 import LibraryTab from './ui/LibraryTab';
 import EditorTab from './ui/EditorTab';
@@ -8,6 +8,11 @@ import PlanTab from './ui/PlanTab';
 import GroundTruthTab from './ui/GroundTruthTab';
 import ImportTab from './ui/ImportTab';
 import DesignTab from './ui/DesignTab';
+import PatternDetail from './ui/PatternDetail';
+import { getGroundTruth, saveDesign } from './storage/storage';
+import { hasCanonicalGroundTruth } from './patterns/groundTruths';
+import { createDesign } from './project/design';
+import { DEFAULT_CLOTH_ID } from './project/cloth';
 
 type TabName = 'library' | 'editor' | 'import' | 'design' | 'plans' | 'gt';
 
@@ -98,6 +103,53 @@ export default function App() {
     [setPattern, navigate],
   );
 
+  // The pattern whose detail panel is open (null = closed).
+  const [selected, setSelected] = useState<{
+    pattern: Pattern;
+    patternKey: string;
+  } | null>(null);
+  // A motif queued from "Add to design", handed to the Design tab to place.
+  const [pendingMotif, setPendingMotif] = useState<{
+    key: string;
+    pattern: Pattern;
+    designId: string;
+  } | null>(null);
+
+  // A pattern has ground truth if it has a saved GT or a canonical one. The
+  // canonical check needs the builtin id, which is the part after "builtin:".
+  // Tirazain/saved patterns have no canonical GT by design (only built-ins
+  // do), so the saved-GT check alone is correct for them.
+  const selectionHasGt = (() => {
+    if (!selected) return false;
+    const key = selected.patternKey;
+    if (getGroundTruth(key)) return true;
+    if (key.startsWith('builtin:')) {
+      return hasCanonicalGroundTruth(key.slice('builtin:'.length));
+    }
+    return false;
+  })();
+
+  // From the detail panel: place a motif into a chosen design (or a fresh one),
+  // then jump to the Design tab, which consumes `pendingMotif`.
+  const addToDesign = useCallback(
+    (pattern: Pattern, key: string, designId: string | null) => {
+      let id = designId;
+      if (id === null) {
+        const d = createDesign({
+          clothId: DEFAULT_CLOTH_ID,
+          widthCm: 20,
+          heightCm: 20,
+        });
+        saveDesign(d);
+        id = d.id;
+      }
+      setPendingMotif({ key, pattern: clonePattern(pattern), designId: id });
+      setSelected(null);
+      navigate('design');
+    },
+    [navigate],
+  );
+
   return (
     <div className="tt tt-linen">
       <header className="hdr">
@@ -140,7 +192,10 @@ export default function App() {
 
       <main className="tt-body">
         {tab === 'library' && (
-          <LibraryTab onLoad={loadAndEdit} showToast={showToast} />
+          <LibraryTab
+            onSelect={(p, k) => setSelected({ pattern: p, patternKey: k })}
+            showToast={showToast}
+          />
         )}
         {tab === 'editor' && (
           <EditorTab
@@ -163,7 +218,12 @@ export default function App() {
           />
         )}
         {tab === 'design' && (
-          <DesignTab onPlanArea={loadAndShowPlans} showToast={showToast} />
+          <DesignTab
+            onPlanArea={loadAndShowPlans}
+            showToast={showToast}
+            pendingMotif={pendingMotif}
+            onConsumedMotif={() => setPendingMotif(null)}
+          />
         )}
         {tab === 'plans' && <PlanTab state={state} />}
         {tab === 'gt' && <GroundTruthTab state={state} showToast={showToast} />}
@@ -182,6 +242,26 @@ export default function App() {
           </a>
         </span>
       </footer>
+
+      <PatternDetail
+        selection={selected}
+        hasGroundTruth={selectionHasGt}
+        onClose={() => setSelected(null)}
+        onEdit={(p, k) => {
+          loadAndEdit(p, k);
+          setSelected(null);
+        }}
+        onPlan={(p, k) => {
+          loadAndShowPlans(p, k);
+          setSelected(null);
+        }}
+        onSubmitGroundTruth={(p, k) => {
+          setPattern(p, k);
+          navigate('gt');
+          setSelected(null);
+        }}
+        onAddToDesign={addToDesign}
+      />
 
       {toast && <div className="toast">{toast.message}</div>}
     </div>

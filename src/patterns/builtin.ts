@@ -7,6 +7,8 @@ export const BUILTIN_PATTERNS: Record<string, Pattern> = {
     name: 'Coffee Bean (Habbet Binn)',
     nameAr: 'حبة البن',
     regionAr: 'الخليل',
+    description:
+      'A Hebron motif named for the coffee bean, long tied to Palestinian hospitality. Paired beans repeat down the panel as a vertical border.',
     width: 19,
     height: 46,
     cells: c([
@@ -63,6 +65,8 @@ export const BUILTIN_PATTERNS: Record<string, Pattern> = {
     name: 'Cypress Tree (Sarw)',
     nameAr: 'السرو',
     regionAr: 'رام الله',
+    description:
+      'The cypress tree, one of the most common tatreez motifs, often read as a symbol of resilience and long life. A Ramallah rendering.',
     width: 11,
     height: 28,
     cells: c([
@@ -105,6 +109,8 @@ export const BUILTIN_PATTERNS: Record<string, Pattern> = {
     name: 'Najma (Star)',
     nameAr: 'النجمة',
     regionAr: 'بيت لحم',
+    description:
+      'A star (Najma) from Bethlehem — a radial medallion built around a central point with even, pointed symmetry.',
     width: 15,
     height: 15,
     cells: c([
@@ -134,6 +140,8 @@ export const BUILTIN_PATTERNS: Record<string, Pattern> = {
     name: "Old Man's Teeth (Snan El 'Ajouz)",
     nameAr: 'سنان العجوز',
     regionAr: 'الجليل',
+    description:
+      'A Galilee border motif: a row of triangular "teeth" above a solid band, with an empty row separating each repeat.',
     width: 10,
     height: 3,
     cells: c([
