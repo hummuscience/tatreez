@@ -885,8 +885,11 @@ function DesignComposer({
     // outside the canvas; without it iPad gives us a single down and never
     // the matching up.
     e.currentTarget.setPointerCapture(e.pointerId);
-    // If a library motif is armed, the tap places it instead of selecting.
-    if (armedKeyRef.current) {
+    // If a library motif is armed, a plain tap places it immediately.
+    // EXCEPT in Border mode — there a "tap" is just the start of a drag the
+    // user will extend to define the border length. We defer to the marquee
+    // path, which sees the full drag at pointerup and tiles accordingly.
+    if (armedKeyRef.current && !borderMode) {
       placeArmedMotif(e.clientX, e.clientY);
       return;
     }
