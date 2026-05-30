@@ -78,8 +78,10 @@ case-insensitive):
   zigzag, hexagon, octagon
 - **objects** — `Objects` / `أدوات`: vase, shamadan, candlestick, lamp, lamps,
   qanadil, cup, finjan, kas, kasaat, glass, glasses, jug, jarra, pitcher,
-  amphora, comb, musht, kohl, makhalah, razor, shafrat, scissors, net, shbak,
+  amphora, musht, mosht, kohl, makhalah, razor, shafrat, scissors, net, shbak,
   bottle, salver, chair, kursi, watch, saat, clock
+  — NB: use `mosht`/`musht` (the comb tool's own name), NOT bare `comb`, because
+  `"rooster's comb"` (urf al deek) is an animal; verified against the data.
 - **architecture** — `Architecture` / `عمارة`: arch, arches, aqwas, qaws, tent,
   tents, khiyam, khaymeh, house, bayt, mosque, masjid, mihrab, tile, tiles,
   balat, window, shubbak, church, kaneesa, gate, gates, bwab, storey, storeys,
@@ -91,10 +93,12 @@ case-insensitive):
   toot, raisins, zbeeb, chickpeas, humus, apple, toofah, baklava, egg, baydat,
   sabr
 
-Disambiguation: `comb` → objects only; `cross`/`saleeb`/`silban` → amulets only.
-`key` words anchored with `\b` to avoid substring false positives (e.g. "sun" in
-"sunbula" is prevented because plants matches `sonbola`/`wheat`, and `\bsun\b`
-won't fire inside another word).
+Disambiguation (verified against the data):
+- The comb tool → objects via `mosht`/`musht` only; bare `comb` is NOT used
+  because "rooster's comb" is an animal.
+- `cross`/`crosses`/`saleeb`/`silban` → amulets only (~15 motifs).
+- All keywords are anchored with `\b…\b` to avoid substring false positives
+  (`\bsun\b` matched only "eye of the sun"; `\bbird\b` matched 31 real birds).
 
 Also add a shared label table for the chip row:
 
