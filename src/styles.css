@@ -576,23 +576,19 @@ body {
 /* Right arm: sits below the inspector, fills remaining space to canvas bottom. */
 .design-inspector { display: flex; flex-direction: column; gap: 16px; }
 .design-motif-col-right { margin-top: 0; }
-.design-canvas-wrap { display: flex; flex-direction: column; gap: 8px; align-items: stretch; min-width: 0; position: relative; }
-/* Floating tool palette overlaid on the canvas's top-left corner. */
+.design-canvas-wrap { display: flex; flex-direction: column; gap: 8px; align-items: stretch; min-width: 0; }
+/* Drawing tools panel — inline in the cloth bar, between the project form
+   controls and the view toggles. */
 .design-tools {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: 5;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 8px;
-  background: var(--surface);
+  padding: 4px 8px;
+  background: var(--surface-deep);
   border: 1px solid var(--rule);
   border-radius: var(--card-radius);
-  box-shadow: var(--shadow);
+  align-self: center;
   flex-wrap: wrap;
-  max-width: calc(100% - 16px);
 }
 .design-tools-sep {
   display: inline-block;

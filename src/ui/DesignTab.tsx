@@ -1916,6 +1916,76 @@ function DesignComposer({
     leftCount + rightCount + bottomCount,
   );
 
+  // Drawing tools chunk — passed into ClothBar so it sits inline in the top
+  // bar between the project form and the view toggles.
+  const toolsNode = (
+    <div className="design-tools" role="toolbar" aria-label="Drawing tools">
+      <button
+        type="button"
+        className={`chip chip-toggle${tool === 'select' && !borderMode ? ' chip-active' : ''}`}
+        aria-pressed={tool === 'select' && !borderMode}
+        onClick={() => switchTool('select')}
+        title="Select / move (default)"
+      >
+        ✥
+      </button>
+      <button
+        type="button"
+        className={`chip chip-toggle${tool === 'pen' ? ' chip-active' : ''}`}
+        aria-pressed={tool === 'pen'}
+        onClick={() => switchTool(tool === 'pen' ? 'select' : 'pen')}
+        title="Pen — paint cells"
+      >
+        ✎ Pen
+      </button>
+      <button
+        type="button"
+        className={`chip chip-toggle${tool === 'eraser' ? ' chip-active' : ''}`}
+        aria-pressed={tool === 'eraser'}
+        onClick={() => switchTool(tool === 'eraser' ? 'select' : 'eraser')}
+        title="Eraser — clear cells"
+      >
+        ⌫ Eraser
+      </button>
+      {tool === 'pen' && (
+        <>
+          <span className="design-tools-sep" aria-hidden="true" />
+          {/* Up to 8 most recently used colors from the design palette
+              as quick swatches. Tap to switch the pen color. */}
+          {design.palette.slice(1).filter((c) => c != null).slice(0, 8).map((c, i) => (
+            <button
+              key={i}
+              type="button"
+              className={`design-tools-swatch${penColor.hex.toLowerCase() === (c?.hex ?? '').toLowerCase() ? ' design-tools-swatch-on' : ''}`}
+              style={{ background: c?.hex ?? '#fff' }}
+              onClick={() => setPenColor(c!)}
+              title={c?.dmc ? `DMC ${c.dmc.number} · ${c.dmc.name}` : c?.hex ?? ''}
+              aria-label={c?.dmc ? `DMC ${c.dmc.number}` : c?.hex ?? ''}
+            />
+          ))}
+          <button
+            type="button"
+            className="chip btn-sm"
+            onClick={() => setPenPickerOpen(true)}
+            title="Pick a DMC color"
+          >
+            …
+          </button>
+        </>
+      )}
+      <span className="design-tools-sep" aria-hidden="true" />
+      <button
+        type="button"
+        className="chip btn-sm"
+        disabled={undoCount === 0}
+        onClick={popUndo}
+        title="Undo last edit (Cmd/Ctrl+Z)"
+      >
+        ↶ Undo
+      </button>
+    </div>
+  );
+
   return (
     <div className="design-composer">
       {helpOpen && <DesignHelp onClose={() => setHelpOpen(false)} />}
@@ -1932,6 +2002,7 @@ function DesignComposer({
         onToggleInspector={() => setShowInspector((v) => !v)}
         onFitToContent={fitCanvasToContent}
         onOpenHelp={() => setHelpOpen(true)}
+        tools={toolsNode}
       />
 
       {/* Filter row: search + compact dropdowns, one line. Hidden when the
@@ -2059,74 +2130,6 @@ function DesignComposer({
         )}
 
         <div className="design-canvas-wrap" ref={wrapRef}>
-          {/* Floating tool palette: pinned to the canvas top-left. Holds
-              the select / pen / eraser / border switches, a pen-colour
-              swatch (when pen is active), and an undo button. */}
-          <div className="design-tools" role="toolbar" aria-label="Drawing tools">
-            <button
-              type="button"
-              className={`chip chip-toggle${tool === 'select' && !borderMode ? ' chip-active' : ''}`}
-              aria-pressed={tool === 'select' && !borderMode}
-              onClick={() => switchTool('select')}
-              title="Select / move (default)"
-            >
-              ✥
-            </button>
-            <button
-              type="button"
-              className={`chip chip-toggle${tool === 'pen' ? ' chip-active' : ''}`}
-              aria-pressed={tool === 'pen'}
-              onClick={() => switchTool(tool === 'pen' ? 'select' : 'pen')}
-              title="Pen — paint cells"
-            >
-              ✎ Pen
-            </button>
-            <button
-              type="button"
-              className={`chip chip-toggle${tool === 'eraser' ? ' chip-active' : ''}`}
-              aria-pressed={tool === 'eraser'}
-              onClick={() => switchTool(tool === 'eraser' ? 'select' : 'eraser')}
-              title="Eraser — clear cells"
-            >
-              ⌫ Eraser
-            </button>
-            {tool === 'pen' && (
-              <>
-                <span className="design-tools-sep" aria-hidden="true" />
-                {/* Up to 8 most recently used colors from the design palette
-                    as quick swatches. Tap to switch the pen color. */}
-                {design.palette.slice(1).filter((c) => c != null).slice(0, 8).map((c, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    className={`design-tools-swatch${penColor.hex.toLowerCase() === (c?.hex ?? '').toLowerCase() ? ' design-tools-swatch-on' : ''}`}
-                    style={{ background: c?.hex ?? '#fff' }}
-                    onClick={() => setPenColor(c!)}
-                    title={c?.dmc ? `DMC ${c.dmc.number} · ${c.dmc.name}` : c?.hex ?? ''}
-                    aria-label={c?.dmc ? `DMC ${c.dmc.number}` : c?.hex ?? ''}
-                  />
-                ))}
-                <button
-                  type="button"
-                  className="chip btn-sm"
-                  onClick={() => setPenPickerOpen(true)}
-                  title="Pick a DMC color"
-                >
-                  …
-                </button>
-              </>
-            )}
-            <span className="design-tools-sep" aria-hidden="true" />
-            <button
-              type="button"
-              className="chip btn-sm"
-              disabled={undoCount === 0}
-              onClick={popUndo}
-              title="Undo last edit (Cmd/Ctrl+Z)"
-            >
-              ↶ Undo
-            </button>
-          </div>
           {penPickerOpen && (
             <ColorReplacePopover
               current={penColor}
@@ -2347,6 +2350,7 @@ function ClothBar({
   onToggleInspector,
   onFitToContent,
   onOpenHelp,
+  tools,
 }: {
   design: Design;
   onChange: (d: Design) => void;
@@ -2357,6 +2361,9 @@ function ClothBar({
   onToggleInspector: () => void;
   onFitToContent: () => void;
   onOpenHelp: () => void;
+  /** Drawing tools panel (Pen/Eraser/Undo) — sits between the form and the
+   * view toggles. Rendered by the parent so it can keep its own state. */
+  tools?: React.ReactNode;
 }) {
   const cloth = getCloth(design.clothId);
   const strands = STRAND_OPTIONS.find((s) => s.id === design.strandsId);
@@ -2541,6 +2548,7 @@ function ClothBar({
           </button>
         </>
       )}
+      {tools}
       {/* View toggles: right-aligned, always visible in either open or
           collapsed state so panels can be revealed before the user touches
           the project settings. */}
