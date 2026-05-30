@@ -12,6 +12,7 @@ import {
   mergePalette,
   newId,
   patternPalette,
+  placeMotif,
   recolorAreaIndex,
   remapCells,
   repeatFit,
@@ -1070,21 +1071,11 @@ function DesignComposer({
       return;
     }
 
-    // Otherwise create a new tight area hugging the motif, positioned at the
-    // drop point and clamped on-grid. Size = trimmed motif dimensions.
-    const ax = Math.max(0, Math.min(cx, design.gridW - w));
-    const ay = Math.max(0, Math.min(cy, design.gridH - h));
-    const area: Area = {
-      id: newId('area'),
-      name: entry.pattern.name || 'motif',
-      x: ax,
-      y: ay,
-      w,
-      h,
-      motifs: [{ patternKey: key, cells, x: 0, y: 0 }],
-    };
-    onChange({ ...design, palette: merged.palette, areas: [...design.areas, area] });
-    selectOne(area.id);
+    // Otherwise create a new tight area hugging the motif via the shared
+    // pure helper, then select it.
+    const next = placeMotif(design, { key, pattern: entry.pattern }, cx, cy);
+    onChange(next);
+    selectOne(next.areas[next.areas.length - 1].id);
   };
 
   // Desktop: HTML5 drag-and-drop. iOS Safari does not fire drag events for
