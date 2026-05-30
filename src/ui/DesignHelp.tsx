@@ -33,10 +33,11 @@ const SECTIONS: Section[] = [
     title: 'Canvas — placing & moving',
     items: [
       { gesture: 'Tap on empty canvas (motif armed)', what: 'Places the armed motif at the tap point. After placement the Select tool turns on so the next tap can move/refine.' },
-      { gesture: 'Select tool (✥)', what: 'Must be on for area-level actions: dragging an area to move it, marquee-marking an empty area, drag-a-box-around-motifs to group them, Shift-drag to rubber-band select. Off by default so a stray pinch on iPad can\'t create stray areas.' },
+      { gesture: 'Tap or drag on a painted cell', what: 'Selects the area there. Drag continues to move it. Works in any tool — only the painted shape responds, so a stray finger on empty canvas is harmless.' },
+      { gesture: 'Select tool (✥)', what: 'Required ONLY for empty-canvas gestures — marking a new empty area, marquee-grouping motifs, Shift-drag rubber-band. Off by default so a stray iPad pinch can\'t leave a ghost area behind.' },
+      { gesture: 'Rotate handle / × delete', what: 'Always work on a selected area, regardless of tool.' },
       { gesture: 'Drag on empty canvas (Select on, no motif armed)', what: 'Marks an empty "place a motif here later" area. Only one empty marker at a time — a new mark replaces the previous.' },
       { gesture: 'Drag a box around existing motifs (Select on)', what: 'Multi-selects every area fully enclosed by the rectangle. Rotate / flip / move then acts on the whole group.' },
-      { gesture: 'Drag inside an area (Select on)', what: 'Moves it. If the area is part of a multi-selection, the whole group moves.' },
       { gesture: 'Shift+drag (Select on)', what: 'Rubber-band selects every area the rectangle touches.' },
     ],
   },

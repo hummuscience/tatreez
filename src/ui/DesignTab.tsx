@@ -1174,17 +1174,12 @@ function DesignComposer({
       return;
     }
 
-    // Without the explicit Select tool we treat the canvas as inert here:
-    // no body-hit area-move, no marquee-mark, no rubber-band selection. The
-    // user must tap "Select" first. This makes iPad pinch-zoom safe — the
-    // start of a pinch can no longer create a stray empty area through the
-    // marquee path. Exception: Border mode with an armed motif still needs
-    // a marquee drag to define the strip length, so we allow that.
-    const borderDrawArmed = borderModeRef.current && armedKeyRef.current;
-    if (toolRef.current !== 'select' && !borderDrawArmed) return;
-
     const hit = areaAt(cx, cy);
     if (hit) {
+      // Hitting a painted cell of an area: always allow selection + move,
+      // regardless of the current tool. The tight-fit hit-test ensures we
+      // only land here when the user clearly intended to grab that motif
+      // (a stray pinch on empty canvas can't accidentally trigger this).
       if (additive) {
         // Toggle this area in/out of the selection; no drag.
         toggleSelected(hit.id);
@@ -1196,8 +1191,13 @@ function DesignComposer({
       else setActiveAreaId(hit.id);
       interactionRef.current = { kind: 'move', areaId: hit.id, offX: cx - hit.x, offY: cy - hit.y };
     } else {
-      // Empty canvas: Shift+drag rubber-band selects; plain drag marks a
-      // filter area.
+      // Empty-canvas marquee — creates new empty areas or rubber-bands a
+      // selection. Gate THIS on the Select tool so a stray pinch-onset on
+      // empty canvas doesn't leave a ghost area behind on iPad. Border
+      // mode with an armed motif bypasses the gate because the drag
+      // intent is explicit.
+      const borderDrawArmed = borderModeRef.current && armedKeyRef.current;
+      if (toolRef.current !== 'select' && !borderDrawArmed) return;
       if (!additive) selectOne(null);
       interactionRef.current = {
         kind: 'marquee',
@@ -1729,10 +1729,9 @@ function DesignComposer({
     if (!key) return;
     placeMotifAt(key, clientX, clientY);
     setArmedKey(null);
-    // After placement the user typically wants to nudge / rotate the new
-    // area; switch into Select so the next tap selects it instead of
-    // landing on the inert default.
-    setTool('select');
+    // No auto-tool-switch: selecting and moving the placed area works in
+    // any tool (the area-hit branch is ungated), so the user keeps whatever
+    // mode they were in.
   };
 
   // ----- pinch-to-zoom on the canvas ------------------------------------------
