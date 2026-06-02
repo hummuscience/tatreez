@@ -73,21 +73,37 @@ export function drawGridLines(
   gridW: number,
   gridH: number,
   color = 'rgba(0,0,0,0.1)',
+  opts?: { major?: number; majorColor?: string; majorWidth?: number },
 ): void {
   ctx.save();
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= gridW; i++) {
-    ctx.beginPath();
-    ctx.moveTo(i * cs, 0);
-    ctx.lineTo(i * cs, gridH * cs);
-    ctx.stroke();
-  }
-  for (let i = 0; i <= gridH; i++) {
-    ctx.beginPath();
-    ctx.moveTo(0, i * cs);
-    ctx.lineTo(gridW * cs, i * cs);
-    ctx.stroke();
+  const major = opts?.major ?? 0;
+  const majorColor = opts?.majorColor ?? 'rgba(0,0,0,0.22)';
+  const majorWidth = opts?.majorWidth ?? 2;
+  const isMajor = (i: number) => major > 0 && i % major === 0;
+  // Minor lines first, then major lines on top so intersections read cleanly.
+  for (const pass of ['minor', 'major'] as const) {
+    if (pass === 'minor') {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+    } else {
+      if (major <= 0) break;
+      ctx.strokeStyle = majorColor;
+      ctx.lineWidth = majorWidth;
+    }
+    for (let i = 0; i <= gridW; i++) {
+      if ((pass === 'major') !== isMajor(i)) continue;
+      ctx.beginPath();
+      ctx.moveTo(i * cs, 0);
+      ctx.lineTo(i * cs, gridH * cs);
+      ctx.stroke();
+    }
+    for (let i = 0; i <= gridH; i++) {
+      if ((pass === 'major') !== isMajor(i)) continue;
+      ctx.beginPath();
+      ctx.moveTo(0, i * cs);
+      ctx.lineTo(gridW * cs, i * cs);
+      ctx.stroke();
+    }
   }
   ctx.restore();
 }

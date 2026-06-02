@@ -649,7 +649,11 @@ function DesignComposer({
     drawAxisLabels(ctx, cs, design.gridW, design.gridH);
     // Everything below draws in grid space, offset past the number gutter.
     ctx.translate(GUTTER, GUTTER);
-    drawGridLines(ctx, cs, design.gridW, design.gridH, 'rgba(0,0,0,0.06)');
+    drawGridLines(ctx, cs, design.gridW, design.gridH, 'rgba(0,0,0,0.06)', {
+      major: 10,
+      majorColor: 'rgba(0,0,0,0.22)',
+      majorWidth: 2,
+    });
 
     const interaction = interactionRef.current;
 
