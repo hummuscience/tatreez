@@ -2070,7 +2070,7 @@ function DesignComposer({
       >
         <span className="btn-bi">
           ✥ Select
-          <span className="btn-bi-ar" dir="rtl">تحديد</span>
+          <span className="btn-bi-ar" dir="rtl" lang="ar" aria-hidden="true">تحديد</span>
         </span>
       </button>
       <button
@@ -2082,7 +2082,7 @@ function DesignComposer({
       >
         <span className="btn-bi">
           ✎ Pen
-          <span className="btn-bi-ar" dir="rtl">قلم</span>
+          <span className="btn-bi-ar" dir="rtl" lang="ar" aria-hidden="true">قلم</span>
         </span>
       </button>
       <button
@@ -2094,7 +2094,7 @@ function DesignComposer({
       >
         <span className="btn-bi">
           ⌫ Eraser
-          <span className="btn-bi-ar" dir="rtl">ممحاة</span>
+          <span className="btn-bi-ar" dir="rtl" lang="ar" aria-hidden="true">ممحاة</span>
         </span>
       </button>
       {tool === 'pen' && (
@@ -2133,7 +2133,7 @@ function DesignComposer({
       >
         <span className="btn-bi">
           ↶ Undo
-          <span className="btn-bi-ar" dir="rtl">تراجع</span>
+          <span className="btn-bi-ar" dir="rtl" lang="ar" aria-hidden="true">تراجع</span>
         </span>
       </button>
     </div>
@@ -2353,7 +2353,7 @@ function DesignComposer({
               <button type="button" className="chip" onClick={() => setZoom(1)} title="Fit width">
                 <span className="btn-bi">
                   Fit
-                  <span className="btn-bi-ar" dir="rtl">ملاءمة</span>
+                  <span className="btn-bi-ar" dir="rtl" lang="ar" aria-hidden="true">ملاءمة</span>
                 </span>
               </button>
             </div>
@@ -2369,7 +2369,7 @@ function DesignComposer({
             >
               <span className="btn-bi">
                 {borderMode ? 'Border ✓' : '+ Border'}
-                <span className="btn-bi-ar" dir="rtl">حاشية</span>
+                <span className="btn-bi-ar" dir="rtl" lang="ar" aria-hidden="true">حاشية</span>
               </span>
             </button>
             <p className="design-canvas-hint">

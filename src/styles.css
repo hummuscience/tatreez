@@ -575,7 +575,7 @@ body {
 .chip-toggle.chip-active { background: var(--accent); color: var(--surface); border-color: var(--accent); }
 /* Bilingual button: English on top, smaller muted Arabic beneath. */
 .btn-bi { display: inline-flex; flex-direction: column; align-items: center; line-height: 1.1; }
-.btn-bi .btn-bi-ar { font-size: 0.72em; opacity: 0.72; margin-top: 1px; }
+.btn-bi .btn-bi-ar { font-family: var(--font-arabic); font-size: 0.72em; opacity: 0.72; margin-top: 1px; }
 .design-inspector { display: flex; flex-direction: column; gap: 16px; }
 .design-canvas-wrap { display: flex; flex-direction: column; gap: 8px; align-items: stretch; min-width: 0; }
 /* Drawing tools panel — inline in the cloth bar, between the project form
