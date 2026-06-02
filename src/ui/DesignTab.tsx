@@ -556,14 +556,11 @@ function DesignComposer({
   const activeIsEmpty = !!activeArea && activeArea.motifs.length === 0 && !activeArea.repeat;
   const fitsActive = (fitOnly || activeIsEmpty) && activeArea !== null;
 
-  // The inspector floats over the canvas. It auto-shows whenever an area is
-  // selected; the manual toggle (showInspector) is a sticky override for when
-  // nothing is selected. Its × dismisses both: clear the selection and the
-  // override so it fully hides.
-  const inspectorVisible = showInspector || selectedIds.size > 0;
+  // The inspector floats over the canvas, shown only via its manual toggle
+  // (showInspector). Its × turns the toggle off.
+  const inspectorVisible = showInspector;
   const dismissInspector = () => {
     setShowInspector(false);
-    selectOne(null);
   };
 
   // Region chips from the loaded library (same source as the Library tab).
@@ -595,8 +592,22 @@ function DesignComposer({
     // distance from the anchor to the current pointer.
     | { kind: 'resizeBorder'; areaId: string; axis: 'h' | 'v'; edge: 'lead' | 'trail'; anchor: number }
     // Pen / eraser drag-paint: every pointermove paints the cell it lands on.
-    | { kind: 'paint'; value: ColorIndex; color?: PaletteColor; lastCx: number; lastCy: number; erasedAreaIds?: Set<string> };
+    | { kind: 'paint'; value: ColorIndex; color?: PaletteColor; lastCx: number; lastCy: number; erasedAreaIds?: Set<string> }
+    // Pan the scroll container: plain one-finger / mouse drag when no tool is
+    // armed. `startX/Y` are the pointer's client coords at grab; `scrollLeft/
+    // Top` the scroll offsets then. Move sets scroll = start - delta.
+    | { kind: 'pan'; startX: number; startY: number; scrollLeft: number; scrollTop: number }
+    // Long-press candidate: pressed on an area with no tool armed on touch.
+    // If the finger stays still ~LONG_PRESS_MS it promotes to a 'move';
+    // moving sooner falls through to a 'pan'. `areaId` is the pressed area;
+    // startX/Y the grab client coords; cx0/cy0 the grab cell for the move
+    // offset; scrollLeft/Top for the pan fallback.
+    | { kind: 'pressHold'; areaId: string; startX: number; startY: number; cx0: number; cy0: number; offX: number; offY: number; scrollLeft: number; scrollTop: number; promoted: boolean };
   const interactionRef = useRef<Interaction | null>(null);
+  // Long-press timer (touch move-by-hold). Cleared on move-too-soon / up.
+  const pressHoldTimerRef = useRef<number | null>(null);
+  const LONG_PRESS_MS = 400;
+  const PAN_SLOP_PX = 8; // movement before a press-hold is treated as a pan
 
   // Canvas fills the residual column width; height follows the cloth aspect
   // ratio. We measure the canvas-wrap's actual width and feed it into the
@@ -1274,11 +1285,20 @@ function DesignComposer({
       return;
     }
 
+    // Gesture model (no tool armed = the inert default):
+    //   • plain drag → PAN the canvas (one finger / mouse).
+    //   • desktop click-drag on a pattern → MOVE it immediately.
+    //   • touch press-and-hold on a pattern → MOVE (the hold disambiguates
+    //     from pan and from a pinch onset, so zooming on iPad never moves
+    //     a pattern).
+    // With the Select tool armed, drag does its tool action (move / marquee)
+    // as before; Pen/Eraser already returned above (they paint).
+    const isMouse = e.pointerType === 'mouse';
+    const scroll = canvasScrollRef.current;
     const hit = areaAt(cx, cy);
+
     if (hit) {
-      // Hitting a painted cell of an area: selection is allowed in any tool,
-      // but starting a move-drag requires the Select tool (see below). The
-      // tight-fit hit-test ensures we only land here on a clear grab intent.
+      // Hitting a painted cell of an area: selection is allowed in any tool.
       if (additive) {
         // Toggle this area in/out of the selection; no drag.
         toggleSelected(hit.id);
@@ -1288,29 +1308,60 @@ function DesignComposer({
       // group drag moves all); otherwise select just this one.
       if (!selectedIds.has(hit.id)) selectOne(hit.id);
       else setActiveAreaId(hit.id);
-      // Moving an area requires the Select tool. With Pen/Eraser active the
-      // tap above still selects (so the inspector updates), but the drag does
-      // not grab the area — pointer-move paints/erases instead.
-      if (toolRef.current === 'select') {
-        interactionRef.current = { kind: 'move', areaId: hit.id, offX: cx - hit.x, offY: cy - hit.y };
+      const offX = cx - hit.x;
+      const offY = cy - hit.y;
+      if (toolRef.current === 'select' || isMouse) {
+        // Select tool, or any desktop click-drag → move immediately.
+        interactionRef.current = { kind: 'move', areaId: hit.id, offX, offY };
+      } else {
+        // Touch, no tool armed: wait for a long-press to promote to a move;
+        // an early drag falls through to a pan (handled in onPointerMove).
+        const ph: Interaction = {
+          kind: 'pressHold',
+          areaId: hit.id,
+          startX: e.clientX,
+          startY: e.clientY,
+          cx0: cx,
+          cy0: cy,
+          offX,
+          offY,
+          scrollLeft: scroll?.scrollLeft ?? 0,
+          scrollTop: scroll?.scrollTop ?? 0,
+          promoted: false,
+        };
+        interactionRef.current = ph;
+        if (pressHoldTimerRef.current != null) window.clearTimeout(pressHoldTimerRef.current);
+        pressHoldTimerRef.current = window.setTimeout(() => {
+          const cur = interactionRef.current;
+          if (cur && cur.kind === 'pressHold' && cur.areaId === hit.id) {
+            interactionRef.current = { kind: 'move', areaId: cur.areaId, offX: cur.offX, offY: cur.offY };
+          }
+        }, LONG_PRESS_MS);
       }
     } else {
-      // Empty-canvas marquee — creates new empty areas or rubber-bands a
-      // selection. Gate THIS on the Select tool so a stray pinch-onset on
-      // empty canvas doesn't leave a ghost area behind on iPad. Border
-      // mode with an armed motif bypasses the gate because the drag
-      // intent is explicit.
+      // Empty canvas. Select tool → marquee (mark a new area / rubber-band).
+      // Border mode with an armed motif also drags out a strip. Otherwise
+      // (inert default) a plain drag pans the canvas.
       const borderDrawArmed = borderModeRef.current && armedKeyRef.current;
-      if (toolRef.current !== 'select' && !borderDrawArmed) return;
-      if (!additive) selectOne(null);
-      interactionRef.current = {
-        kind: 'marquee',
-        mode: additive ? 'select' : 'mark',
-        x0: cx,
-        y0: cy,
-        x1: cx,
-        y1: cy,
-      };
+      if (toolRef.current === 'select' || borderDrawArmed) {
+        if (!additive) selectOne(null);
+        interactionRef.current = {
+          kind: 'marquee',
+          mode: additive ? 'select' : 'mark',
+          x0: cx,
+          y0: cy,
+          x1: cx,
+          y1: cy,
+        };
+      } else {
+        interactionRef.current = {
+          kind: 'pan',
+          startX: e.clientX,
+          startY: e.clientY,
+          scrollLeft: scroll?.scrollLeft ?? 0,
+          scrollTop: scroll?.scrollTop ?? 0,
+        };
+      }
     }
   };
 
@@ -1384,6 +1435,37 @@ function DesignComposer({
       const moveId = paintCellAt(cx, cy, it.value, it.color);
       if (it.erasedAreaIds && moveId) it.erasedAreaIds.add(moveId);
       interactionRef.current = { ...it, lastCx: cx, lastCy: cy };
+    } else if (it.kind === 'pan') {
+      // Drag the scroll container: scroll opposite the pointer delta so the
+      // canvas follows the finger/mouse.
+      const scroll = canvasScrollRef.current;
+      if (!scroll) return;
+      scroll.scrollLeft = it.scrollLeft - (e.clientX - it.startX);
+      scroll.scrollTop = it.scrollTop - (e.clientY - it.startY);
+    } else if (it.kind === 'pressHold') {
+      // Waiting for the long-press to fire. If the finger moves past the slop
+      // before the timer, the user meant to pan, not move — cancel the timer
+      // and convert to a pan in place.
+      const movedX = e.clientX - it.startX;
+      const movedY = e.clientY - it.startY;
+      if (Math.hypot(movedX, movedY) > PAN_SLOP_PX) {
+        if (pressHoldTimerRef.current != null) {
+          window.clearTimeout(pressHoldTimerRef.current);
+          pressHoldTimerRef.current = null;
+        }
+        const scroll = canvasScrollRef.current;
+        interactionRef.current = {
+          kind: 'pan',
+          startX: it.startX,
+          startY: it.startY,
+          scrollLeft: it.scrollLeft,
+          scrollTop: it.scrollTop,
+        };
+        if (scroll) {
+          scroll.scrollLeft = it.scrollLeft - movedX;
+          scroll.scrollTop = it.scrollTop - movedY;
+        }
+      }
     } else {
       // rotate: angle from group centre to pointer, snapped live to 90° steps
       // so the preview shows exactly what will commit (cross-stitch only
@@ -1403,7 +1485,16 @@ function DesignComposer({
    * interaction WITHOUT committing it — the previous behaviour would
    * commit a half-drag marquee as an empty area, creating ghost areas
    * whenever the user started a two-finger pinch. */
+  // Cancel any in-flight long-press timer (move-by-hold candidate).
+  const clearPressHoldTimer = () => {
+    if (pressHoldTimerRef.current != null) {
+      window.clearTimeout(pressHoldTimerRef.current);
+      pressHoldTimerRef.current = null;
+    }
+  };
+
   const onPointerCancel = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    clearPressHoldTimer();
     if (pinchPointersRef.current.has(e.pointerId)) {
       endPinch(e);
       return;
@@ -1413,6 +1504,7 @@ function DesignComposer({
   };
 
   const onPointerUp = (e?: React.PointerEvent<HTMLCanvasElement>) => {
+    clearPressHoldTimer();
     if (e && pinchPointersRef.current.has(e.pointerId)) {
       endPinch(e);
       return;
@@ -1989,6 +2081,9 @@ function DesignComposer({
     if (e.pointerType !== 'touch') return false;
     pinchPointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinchPointersRef.current.size < 2) return false;
+    // A second finger means pinch-zoom, not move/pan: drop any in-flight
+    // single-finger interaction and its pending long-press timer.
+    clearPressHoldTimer();
     interactionRef.current = null;
     const pts = [...pinchPointersRef.current.values()];
     const midX = (pts[0].x + pts[1].x) / 2;
@@ -2351,7 +2446,7 @@ function DesignComposer({
               ref={canvasRef}
               width={canvasW}
               height={canvasH}
-              className={`design-canvas${armedKey ? ' design-canvas-armed' : ''}`}
+              className={`design-canvas${armedKey ? ' design-canvas-armed' : ''}${tool === 'none' && !armedKey ? ' design-canvas-pan' : ''}`}
               // `touch-action: none` (set in CSS) tells iPad we'll handle
               // touches ourselves, so the page doesn't scroll/zoom while the
               // user is dragging or pinching the canvas.
@@ -2401,8 +2496,8 @@ function DesignComposer({
               </span>
             </button>
             <p className="design-canvas-hint">
-              Drag on empty canvas to mark an area · drag a pattern on · drag a motif to move · handle
-              rotates in 90° steps · Shift + scroll to zoom
+              Drag to pan · press &amp; hold a pattern to move it (or click-drag on desktop) ·
+              Shift + scroll or pinch to zoom · arm a tool to draw / select
             </p>
           </div>
 
@@ -2528,6 +2623,11 @@ function MotifCard({
     >
       <PatternThumb pattern={entry.pattern} width={104} height={82} />
       <div className="design-lib-card-name">{entry.pattern.name}</div>
+      {(entry.pattern.nameAr ?? entry.pattern.source?.arabicName) && (
+        <div className="design-lib-card-name-ar" dir="rtl" lang="ar">
+          {entry.pattern.nameAr ?? entry.pattern.source?.arabicName}
+        </div>
+      )}
     </div>
   );
 }

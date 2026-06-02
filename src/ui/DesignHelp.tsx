@@ -32,11 +32,12 @@ const SECTIONS: Section[] = [
   {
     title: 'Canvas — placing & moving',
     items: [
-      { gesture: 'Tap on empty canvas (motif armed)', what: 'Places the armed motif at the tap point. After placement the Select tool turns on so the next tap can move/refine.' },
-      { gesture: 'Tap on a painted cell', what: 'Selects the area there. Tapping to select works in any tool — only the painted shape responds, so a stray finger on empty canvas is harmless.' },
-      { gesture: 'Select tool (✥)', what: 'Required to MOVE, ROTATE, or DELETE an area — and for empty-canvas gestures (marking a new area, marquee-grouping, Shift-drag rubber-band). With Pen/Eraser active, pressing an area paints/erases instead. The × delete button and rotate handle only appear under Select. Off by default so a stray iPad pinch can\'t leave a ghost area behind.' },
-      { gesture: 'Drag on empty canvas (Select on, no motif armed)', what: 'Marks an empty "place a motif here later" area. Only one empty marker at a time — a new mark replaces the previous.' },
-      { gesture: 'Drag a box around existing motifs (Select on)', what: 'Multi-selects every area fully enclosed by the rectangle. Rotate / flip / move then acts on the whole group.' },
+      { gesture: 'Drag the canvas (no tool armed)', what: 'Pans the view — useful when zoomed in. One finger on tablet, click-drag on desktop. This is the default, so the canvas never moves a pattern by accident while you pinch-zoom.' },
+      { gesture: 'Move a pattern', what: 'Press and hold a pattern for a moment, then drag (tablet). On desktop, just click-drag the pattern. No tool needed.' },
+      { gesture: 'Tap a pattern', what: 'Selects the area there (shows in the Inspector if open). Only the painted shape responds.' },
+      { gesture: 'Tap on empty canvas (motif armed)', what: 'Places the armed motif at the tap point.' },
+      { gesture: 'Select tool (✥)', what: 'Turn on for empty-canvas gestures: marking a new area, marquee-grouping, Shift-drag rubber-band. Also required for the × delete button and the rotate handle, which only appear under Select. Off by default.' },
+      { gesture: 'Drag a box around motifs (Select on)', what: 'Multi-selects every area fully enclosed by the rectangle. Rotate / flip / move then acts on the whole group.' },
       { gesture: 'Shift+drag (Select on)', what: 'Rubber-band selects every area the rectangle touches.' },
     ],
   },

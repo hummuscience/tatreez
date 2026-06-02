@@ -655,6 +655,7 @@ body {
 .design-lib-card:active { cursor: grabbing; }
 .design-lib-card canvas { width: 100%; height: auto; display: block; }
 .design-lib-card-name { font-size: 10px; color: var(--ink-soft); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.design-lib-card-name-ar { font-family: var(--font-arabic); font-size: 10px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* The canvas backing px = wrapW × zoom, so it renders 1:1 (no CSS scaling):
    at 100% it fills the column; zoomed in it overflows and the inner scroll
@@ -674,6 +675,9 @@ body {
   user-select: none;
 }
 .design-canvas-armed { cursor: copy; outline: 2px dashed var(--accent); outline-offset: -3px; }
+/* No tool armed: the canvas pans on drag, so show a grab cursor. */
+.design-canvas-pan { cursor: grab; }
+.design-canvas-pan:active { cursor: grabbing; }
 .design-lib-card-armed { border-color: var(--accent); background: var(--accent-tint); box-shadow: 0 0 0 2px var(--accent) inset; }
 .design-canvas-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .design-zoom { display: flex; align-items: center; gap: 6px; }
