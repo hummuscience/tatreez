@@ -2068,7 +2068,10 @@ function DesignComposer({
         onClick={() => switchTool(tool === 'select' ? 'none' : 'select')}
         title="Select / move areas"
       >
-        ✥ Select
+        <span className="btn-bi">
+          ✥ Select
+          <span className="btn-bi-ar" dir="rtl">تحديد</span>
+        </span>
       </button>
       <button
         type="button"
@@ -2077,7 +2080,10 @@ function DesignComposer({
         onClick={() => switchTool(tool === 'pen' ? 'select' : 'pen')}
         title="Pen — paint cells"
       >
-        ✎ Pen
+        <span className="btn-bi">
+          ✎ Pen
+          <span className="btn-bi-ar" dir="rtl">قلم</span>
+        </span>
       </button>
       <button
         type="button"
@@ -2086,7 +2092,10 @@ function DesignComposer({
         onClick={() => switchTool(tool === 'eraser' ? 'select' : 'eraser')}
         title="Eraser — clear cells"
       >
-        ⌫ Eraser
+        <span className="btn-bi">
+          ⌫ Eraser
+          <span className="btn-bi-ar" dir="rtl">ممحاة</span>
+        </span>
       </button>
       {tool === 'pen' && (
         <>
@@ -2122,7 +2131,10 @@ function DesignComposer({
         onClick={popUndo}
         title="Undo last edit (Cmd/Ctrl+Z)"
       >
-        ↶ Undo
+        <span className="btn-bi">
+          ↶ Undo
+          <span className="btn-bi-ar" dir="rtl">تراجع</span>
+        </span>
       </button>
     </div>
   );
@@ -2339,7 +2351,10 @@ function DesignComposer({
                 +
               </button>
               <button type="button" className="chip" onClick={() => setZoom(1)} title="Fit width">
-                Fit
+                <span className="btn-bi">
+                  Fit
+                  <span className="btn-bi-ar" dir="rtl">ملاءمة</span>
+                </span>
               </button>
             </div>
             {/* Border tool: requires an armed library motif. When on, dragging
@@ -2352,7 +2367,10 @@ function DesignComposer({
               onClick={() => setBorderMode((v) => !v)}
               title={armedKey ? 'Tile the armed motif along a drag' : 'Arm a pattern first to draw a border'}
             >
-              {borderMode ? 'Border ✓' : '+ Border'}
+              <span className="btn-bi">
+                {borderMode ? 'Border ✓' : '+ Border'}
+                <span className="btn-bi-ar" dir="rtl">حاشية</span>
+              </span>
             </button>
             <p className="design-canvas-hint">
               Drag on empty canvas to mark an area · drag a pattern on · drag a motif to move · handle
