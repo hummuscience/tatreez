@@ -8,6 +8,7 @@ import { countRegions, countStitches } from '../engine/regions';
 import { savePattern, savedPatternKey } from '../storage/storage';
 import { GUTTER, cellSize, clearCanvas, drawAxisLabels, drawGridLines, drawPatternBackground } from './canvasUtil';
 import ColorReplacePopover from './ColorReplacePopover';
+import DesignPicker from './DesignPicker';
 import type { PatternState } from '../App';
 
 interface Props {
@@ -15,11 +16,13 @@ interface Props {
   onChangePattern: (p: Pattern) => void;
   onSaved: (p: Pattern, key: string) => void;
   onGoToPlans: () => void;
+  /** Place the current pattern into a design (existing id, or null = new). */
+  onAddToDesign: (pattern: Pattern, key: string, designId: string | null) => void;
 }
 
 const CANVAS_SIZE = 480;
 
-export default function EditorTab({ state, onChangePattern, onSaved, onGoToPlans }: Props) {
+export default function EditorTab({ state, onChangePattern, onSaved, onGoToPlans, onAddToDesign }: Props) {
   const { pattern } = state;
   const [activeColor, setActiveColor] = useState<ColorIndex>(1);
   const [replacing, setReplacing] = useState(false);
@@ -133,15 +136,29 @@ export default function EditorTab({ state, onChangePattern, onSaved, onGoToPlans
     onChangePattern(emptyPattern(pattern.width, pattern.height, name));
   };
 
+  // Build the pattern with the current name/Arabic-name applied — shared by
+  // "Save to library" and "Add to design".
+  const finalizedPattern = (): Pattern => ({
+    ...pattern,
+    name: name.trim() || 'Untitled',
+    ...(nameAr.trim() ? { nameAr: nameAr.trim() } : {}),
+  });
+
   const onSave = () => {
-    const finalName = name.trim() || 'Untitled';
-    const toSave: Pattern = {
-      ...pattern,
-      name: finalName,
-      ...(nameAr.trim() ? { nameAr: nameAr.trim() } : {}),
-    };
+    const toSave = finalizedPattern();
     const id = savePattern(toSave);
     onSaved(toSave, savedPatternKey(id));
+  };
+
+  const [pickingDesign, setPickingDesign] = useState(false);
+  const addToDesign = (designId: string | null) => {
+    const p = finalizedPattern();
+    // Provenance key: reuse the saved key if this pattern came from the
+    // library, else a synthetic editor key (placeMotif only stores it as the
+    // motif's patternKey — it never needs to resolve to a library entry).
+    const key = state.patternKey ?? `editor:${p.name}`;
+    onAddToDesign(p, key, designId);
+    setPickingDesign(false);
   };
 
   // Decide which palette to show (objects carry hex + optional DMC).
@@ -338,9 +355,18 @@ export default function EditorTab({ state, onChangePattern, onSaved, onGoToPlans
             <button className="btn-ghost" onClick={onGoToPlans}>
               Generate plans →
             </button>
+            <button className="btn-ghost" onClick={() => setPickingDesign(true)}>
+              Add to design
+            </button>
             <button className="btn-primary" onClick={onSave}>
               Save to library
             </button>
+            {pickingDesign && (
+              <DesignPicker
+                onCancel={() => setPickingDesign(false)}
+                onChoose={addToDesign}
+              />
+            )}
           </div>
         </div>
 

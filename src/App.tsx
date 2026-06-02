@@ -206,6 +206,7 @@ export default function App() {
               showToast('Pattern saved to library');
             }}
             onGoToPlans={() => navigate('plans')}
+            onAddToDesign={addToDesign}
           />
         )}
         {tab === 'import' && (
