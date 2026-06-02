@@ -85,6 +85,11 @@ interface Props {
   showToast: (msg: string) => void;
 }
 
+/** Region-filter sentinel for patterns with no `source.region`. A real region
+ * name can never be this, so it's a safe stand-in for the "Other" bucket —
+ * which keeps the per-region counts summing to the full archive total. */
+const NO_REGION = '__no_region__';
+
 export default function LibraryTab({ onSelect, showToast }: Props) {
   const [saved, setSaved] = useState<SavedPattern[]>([]);
   const [refreshTick, setRefreshTick] = useState(0);
@@ -128,17 +133,29 @@ export default function LibraryTab({ onSelect, showToast }: Props) {
   }, [archiveEntries]);
 
   const archiveRegions = useMemo(() => {
+    // Bucket every pattern: real regions by name, region-less ones under the
+    // NO_REGION sentinel. Counts therefore sum to the full archive total, and
+    // no pattern is unreachable from the Region filter.
     const counts = new Map<string, number>();
+    let other = 0;
     for (const e of archiveEntries) {
       const r = e.pattern.source?.region;
       if (r) counts.set(r, (counts.get(r) ?? 0) + 1);
+      else other++;
     }
-    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    const named = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    // "Other" goes last, only when there are region-less patterns.
+    return other > 0 ? [...named, [NO_REGION, other] as [string, number]] : named;
   }, [archiveEntries]);
 
   const archiveFiltered = useMemo(() => {
     return archiveEntries.filter((e) => {
-      if (archiveRegion && e.pattern.source?.region !== archiveRegion) return false;
+      if (archiveRegion) {
+        const r = e.pattern.source?.region;
+        // NO_REGION selects exactly the region-less patterns; otherwise
+        // require an exact region match.
+        if (archiveRegion === NO_REGION ? !!r : r !== archiveRegion) return false;
+      }
       if (archiveColors !== null) {
         if (archiveColors === 5 ? e.colors < 5 : e.colors !== archiveColors) {
           return false;
@@ -324,7 +341,8 @@ export default function LibraryTab({ onSelect, showToast }: Props) {
                     setArchiveRegion(archiveRegion === region ? null : region)
                   }
                 >
-                  {region} <span className="chip-count">{count}</span>
+                  {region === NO_REGION ? 'Other · أخرى' : region}{' '}
+                  <span className="chip-count">{count}</span>
                 </Chip>
               ))}
             </FilterRow>
