@@ -168,6 +168,8 @@ body {
 .filter-chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip-count { color: var(--ink-soft); margin-left: 4px; font-family: var(--font-mono); font-size: 10px; }
 .chip-active .chip-count { color: var(--surface); opacity: 0.65; }
+.chip-ar { font-family: var(--font-arabic); opacity: 0.75; }
+.chip-active .chip-ar { opacity: 0.9; }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
 .lib-compact .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }

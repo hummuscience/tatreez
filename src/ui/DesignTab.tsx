@@ -66,6 +66,7 @@ import {
   matchesQuery,
   paintedCells,
   paintedSize,
+  regionBilingual,
   sizeBucket,
   type Category,
   type ColorBucket,
@@ -2294,7 +2295,7 @@ function DesignComposer({
           />
         </label>
         <div className="design-cat-chips">
-          {CATEGORY_FILTERS.map(([key, label]) => (
+          {CATEGORY_FILTERS.map(([key, label, labelAr]) => (
             <button
               key={key}
               type="button"
@@ -2308,9 +2309,10 @@ function DesignComposer({
                   return next;
                 })
               }
-              title={`${catCounts[key]} motifs`}
+              title={`${label} · ${labelAr} — ${catCounts[key]} motifs`}
             >
-              {label} <span className="chip-count">{catCounts[key]}</span>
+              {label} <span dir="rtl" lang="ar" className="chip-ar">{labelAr}</span>{' '}
+              <span className="chip-count">{catCounts[key]}</span>
             </button>
           ))}
         </div>
@@ -2325,7 +2327,7 @@ function DesignComposer({
             <option value="">Region · المنطقة</option>
             {regions.map(([region, count]) => (
               <option key={region} value={region}>
-                {region} ({count})
+                {regionBilingual(region)} ({count})
               </option>
             ))}
           </select>

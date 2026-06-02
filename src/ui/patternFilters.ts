@@ -75,6 +75,33 @@ export type ComplexityBucket = 'simple' | 'medium' | 'complex';
 export type ColorBucket = 1 | 2 | 3 | 4 | 5;
 
 /**
+ * Arabic names for the Palestinian regions the archive tags patterns with.
+ * The archive stores only the English `source.region`, so the UI maps it to
+ * Arabic here for display. Keyed by the exact English region string.
+ */
+export const REGION_AR: Record<string, string> = {
+  Ramallah: 'رام الله',
+  Hebron: 'الخليل',
+  Gaza: 'غزة',
+  Bethlehem: 'بيت لحم',
+  Jaffa: 'يافا',
+  Jerusalem: 'القدس',
+  Galilee: 'الجليل',
+  Nablus: 'نابلس',
+};
+
+/** Arabic label for an English region, falling back to the English name. */
+export function regionAr(region: string): string {
+  return REGION_AR[region] ?? region;
+}
+
+/** "English · العربية" for a region, or just the English when unmapped. */
+export function regionBilingual(region: string): string {
+  const ar = REGION_AR[region];
+  return ar ? `${region} · ${ar}` : region;
+}
+
+/**
  * Heuristic: is this pattern a border? Matches names that mention "border"
  * (English), "sinsal"/"haashia"/"dayer" (Palestinian border terms), or the
  * Arabic ٍسنسال / حاشية / داير. Source-of-truth is name text — many tirazain
