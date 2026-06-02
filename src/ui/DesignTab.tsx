@@ -59,7 +59,7 @@ import {
   COLOR_BUCKETS,
   COMPLEXITY_FILTERS,
   SIZE_FILTERS,
-  categoriesOf,
+  categoriesOfWithOther,
   colorCount,
   complexityBucket,
   isBorderPattern,
@@ -2012,7 +2012,7 @@ function DesignComposer({
   const catCounts = useMemo(() => {
     const counts = {} as Record<Category, number>;
     for (const [key] of CATEGORY_FILTERS) counts[key] = 0;
-    for (const l of library) for (const c of categoriesOf(l.pattern)) counts[c]++;
+    for (const l of library) for (const c of categoriesOfWithOther(l.pattern)) counts[c]++;
     return counts;
   }, [library]);
   const filteredLib = library.filter((l) => {
@@ -2027,7 +2027,7 @@ function DesignComposer({
     if (fComplexity && complexityBucket(paintedCells(p)) !== fComplexity) return false;
     if (bordersOnly && !isBorderPattern(p)) return false;
     if (fCats.size > 0) {
-      const cats = categoriesOf(p);
+      const cats = categoriesOfWithOther(p);
       if (!cats.some((c) => fCats.has(c))) return false;
     }
     if (fitsActive && activeArea) {
