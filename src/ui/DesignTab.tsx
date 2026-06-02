@@ -1254,10 +1254,9 @@ function DesignComposer({
 
     const hit = areaAt(cx, cy);
     if (hit) {
-      // Hitting a painted cell of an area: always allow selection + move,
-      // regardless of the current tool. The tight-fit hit-test ensures we
-      // only land here when the user clearly intended to grab that motif
-      // (a stray pinch on empty canvas can't accidentally trigger this).
+      // Hitting a painted cell of an area: selection is allowed in any tool,
+      // but starting a move-drag requires the Select tool (see below). The
+      // tight-fit hit-test ensures we only land here on a clear grab intent.
       if (additive) {
         // Toggle this area in/out of the selection; no drag.
         toggleSelected(hit.id);
@@ -1267,7 +1266,12 @@ function DesignComposer({
       // group drag moves all); otherwise select just this one.
       if (!selectedIds.has(hit.id)) selectOne(hit.id);
       else setActiveAreaId(hit.id);
-      interactionRef.current = { kind: 'move', areaId: hit.id, offX: cx - hit.x, offY: cy - hit.y };
+      // Moving an area requires the Select tool. With Pen/Eraser active the
+      // tap above still selects (so the inspector updates), but the drag does
+      // not grab the area — pointer-move paints/erases instead.
+      if (toolRef.current === 'select') {
+        interactionRef.current = { kind: 'move', areaId: hit.id, offX: cx - hit.x, offY: cy - hit.y };
+      }
     } else {
       // Empty-canvas marquee — creates new empty areas or rubber-bands a
       // selection. Gate THIS on the Select tool so a stray pinch-onset on
