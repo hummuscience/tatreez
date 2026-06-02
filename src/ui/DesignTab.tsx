@@ -588,18 +588,6 @@ function DesignComposer({
     return () => ro.disconnect();
   }, []);
 
-  const [displayedCanvasH, setDisplayedCanvasH] = useState(420);
-  useEffect(() => {
-    const el = canvasScrollRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver((entries) => {
-      const h = entries[0]?.contentRect.height;
-      if (h && h > 0) setDisplayedCanvasH(Math.floor(h));
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
   // Shift + wheel zooms the canvas. Attached non-passively so we can prevent
   // the page from scrolling while zooming.
   useEffect(() => {
@@ -2064,36 +2052,11 @@ function DesignComposer({
     setFCats(new Set());
   };
 
-  // Split the capped results between the L's two arms: a left column and a
-  // bottom strip. Caps keep the L full without per-strip scroll fights —
-  // narrow the dropdowns to reach motifs beyond the cap.
-  // Pack motifs into the space around the canvas, filling each region before
-  // the next: (1) the left column top→bottom to the canvas bottom, (2) the
-  // right column below the inspector to the canvas bottom, (3) full-width rows
-  // beneath the whole band. Counts derive from how many ~106px cards fit each
-  // region's height; overflow is reached by narrowing the filters.
-  const CARD_PX = 106;
-  // Use the canvas's *displayed* height (CSS-capped) so the arms match what's
-  // on screen — a short design gives short arms, a tall one gives tall arms.
-  const canvasPx = displayedCanvasH;
-  const leftCount = Math.max(3, Math.floor(canvasPx / CARD_PX));
-  // Right column starts below the inspector, so it has less height than the
-  // canvas; estimate the inspector at ~300px.
-  const rightCount = Math.max(0, Math.floor((canvasPx - 300) / CARD_PX));
-  // Bottom rows: a few full-width rows of cards (the grid wraps to fill).
-  const BOTTOM_ROWS = 3;
-  const bottomCount = BOTTOM_ROWS * 10;
-
-  const leftMotifs = filteredLib.slice(0, leftCount);
-  const rightMotifs = filteredLib.slice(leftCount, leftCount + rightCount);
-  const bottomMotifs = filteredLib.slice(
-    leftCount + rightCount,
-    leftCount + rightCount + bottomCount,
-  );
-  const totalShown = Math.min(
-    filteredLib.length,
-    leftCount + rightCount + bottomCount,
-  );
+  // All filtered (searched) patterns render in the full-width strip below the
+  // canvas. Show the whole filtered set — the user asked to see all the
+  // search results, not a slice.
+  const bottomMotifs = filteredLib;
+  const totalShown = filteredLib.length;
 
   // Drawing tools chunk — passed into ClothBar so it sits inline in the top
   // bar between the project form and the view toggles.
@@ -2311,24 +2274,10 @@ function DesignComposer({
       </div>
       )}
 
-      {/* L-shape: left motif column + canvas + right inspector, then bottom strip.
-          Modifier classes drop the relevant grid column when its panel is off,
-          so the canvas naturally widens. */}
+      {/* Full-width canvas + right inspector, then all patterns in a strip below.
+          The inspector modifier drops its grid column when the panel is off,
+          so the canvas spans the full width. */}
       <div className={`design-body-l${showPatterns ? '' : ' design-body-l-no-patterns'}${showInspector ? '' : ' design-body-l-no-inspector'}`}>
-        {/* Cap the left column to the canvas's displayed height so the bottom
-            strip hugs the canvas bottom instead of floating far below it. */}
-        {showPatterns && (
-          <aside className="design-motif-col" style={{ maxHeight: displayedCanvasH }}>
-            {leftMotifs.length === 0 ? (
-              <p className="empty-hint">No patterns match.</p>
-            ) : (
-              leftMotifs.map((l) => (
-                <MotifCard key={l.key} entry={l} armed={armedKey === l.key} onArm={armMotif} />
-              ))
-            )}
-          </aside>
-        )}
-
         <div className="design-canvas-wrap" ref={wrapRef}>
           {penPickerOpen && (
             <ColorReplacePopover
@@ -2450,19 +2399,6 @@ function DesignComposer({
                 onPlanArea(sub, `design:${design.id}:${area.id}`);
               }}
             />
-            {/* Right arm: motifs fill the space below the inspector to the
-                canvas bottom (clipped so they don't overrun it). Only shown
-                while the Patterns library is on. */}
-            {showPatterns && rightMotifs.length > 0 && (
-              <div
-                className="design-motif-col design-motif-col-right"
-                style={{ maxHeight: Math.max(0, displayedCanvasH - 300) }}
-              >
-                {rightMotifs.map((l) => (
-                  <MotifCard key={l.key} entry={l} armed={armedKey === l.key} onArm={armMotif} />
-                ))}
-              </div>
-            )}
           </aside>
         )}
       </div>

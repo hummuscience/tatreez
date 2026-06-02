@@ -535,15 +535,15 @@ body {
    a sibling that spans the full width. */
 .design-body-l {
   display: grid;
-  grid-template-columns: 124px minmax(0, 1fr) 280px;
+  grid-template-columns: minmax(0, 1fr) 280px;
   gap: 14px;
   align-items: start;
 }
-/* When either side is toggled off, drop its grid column so the canvas
-   reclaims that horizontal space — no need to also remove the wrapping
-   .design-body-l div, the JSX simply omits the panel. */
+/* Patterns no longer occupy a grid column (they render in the full-width strip
+   below the canvas), so -no-patterns matches the default. Hiding the inspector
+   drops to a single full-width canvas column. */
+.design-body-l-no-inspector { grid-template-columns: minmax(0, 1fr); }
 .design-body-l-no-patterns { grid-template-columns: minmax(0, 1fr) 280px; }
-.design-body-l-no-inspector { grid-template-columns: 124px minmax(0, 1fr); }
 .design-body-l-no-patterns.design-body-l-no-inspector { grid-template-columns: minmax(0, 1fr); }
 .design-view-toggles { display: flex; gap: 6px; align-items: center; }
 /* Top toolbar for view toggles — sits between the cloth bar and the
@@ -577,18 +577,7 @@ body {
 }
 .chip-toggle:hover { background: var(--accent-tint); }
 .chip-toggle.chip-active { background: var(--accent); color: var(--surface); border-color: var(--accent); }
-/* Left arm. Clipped to the canvas height (inline max-height) so a long result
-   list never overflows past the canvas; the remainder fills the other arms. */
-.design-motif-col {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  overflow: hidden;
-}
-.design-motif-col .design-lib-card { width: 104px; flex: 0 0 auto; }
-/* Right arm: sits below the inspector, fills remaining space to canvas bottom. */
 .design-inspector { display: flex; flex-direction: column; gap: 16px; }
-.design-motif-col-right { margin-top: 0; }
 .design-canvas-wrap { display: flex; flex-direction: column; gap: 8px; align-items: stretch; min-width: 0; }
 /* Drawing tools panel — inline in the cloth bar, between the project form
    controls and the view toggles. */
@@ -624,7 +613,7 @@ body {
   outline-offset: 2px;
 }
 /* Bottom rows: full-width dense wrap, filling each row left→right. */
-.design-motif-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.design-motif-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; width: 100%; }
 .design-motif-strip .design-lib-card { width: 104px; }
 
 .design-lib-card { border: 1px solid var(--rule); border-radius: var(--input-radius); padding: 4px; background: var(--surface-deep); cursor: grab; text-align: center; }
