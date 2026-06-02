@@ -13,8 +13,8 @@ import {
   refitAreaToContent,
   remapCells,
   repeatFit,
+  quarterTurnsFromAngle,
   rotateCW,
-  rotateCellsByAngle,
   rotateTurns,
   trimCells,
   type Area,
@@ -203,63 +203,42 @@ describe('transforms', () => {
   });
 });
 
-describe('rotateCellsByAngle', () => {
-  // 2x3 grid (h=2, w=3):
-  //   1 2 3
-  //   4 5 6
-  const g = [
-    [1, 2, 3],
-    [4, 5, 6],
-  ];
+describe('quarterTurnsFromAngle', () => {
+  const Q = Math.PI / 2;
 
-  it('falls back to lossless rotateTurns for exact 90° multiples', () => {
-    expect(rotateCellsByAngle(g, 0)).toEqual(g);
-    expect(rotateCellsByAngle(g, Math.PI / 2)).toEqual(rotateTurns(g, 1));
-    expect(rotateCellsByAngle(g, Math.PI)).toEqual(rotateTurns(g, 2));
-    expect(rotateCellsByAngle(g, -Math.PI / 2)).toEqual(rotateTurns(g, -1));
-    // 2π should also be identity (modular).
-    expect(rotateCellsByAngle(g, Math.PI * 2)).toEqual(g);
+  it('rounds exact 90° multiples to the matching number of turns', () => {
+    expect(quarterTurnsFromAngle(0)).toBe(0);
+    expect(quarterTurnsFromAngle(Q)).toBe(1);
+    expect(quarterTurnsFromAngle(2 * Q)).toBe(2);
+    expect(quarterTurnsFromAngle(3 * Q)).toBe(3);
   });
 
-  it('returns an empty grid for an empty input', () => {
-    expect(rotateCellsByAngle([], Math.PI / 4)).toEqual([]);
+  it('snaps a 45° angle to the nearest quarter turn (rounds up)', () => {
+    // 45° is exactly between 0 and 90°; Math.round ties toward +∞ → 1 turn.
+    expect(quarterTurnsFromAngle(Math.PI / 4)).toBe(1);
+    // Just under 45° snaps down to 0; just over snaps up to 1.
+    expect(quarterTurnsFromAngle(Math.PI / 4 - 0.1)).toBe(0);
+    expect(quarterTurnsFromAngle(Math.PI / 4 + 0.1)).toBe(1);
   });
 
-  it('grows the output bbox to fit the rotated diagonal extent', () => {
-    // 2x2 grid rotated 45° → diagonal ≈ √2 × 2 ≈ 2.83, so output is 3x3.
-    const square = [
-      [1, 1],
-      [1, 1],
+  it('normalizes into [0,3] for negative and large angles', () => {
+    expect(quarterTurnsFromAngle(-Q)).toBe(3); // -90° == +270°
+    expect(quarterTurnsFromAngle(-2 * Q)).toBe(2);
+    expect(quarterTurnsFromAngle(2 * Math.PI)).toBe(0); // full turn
+    expect(quarterTurnsFromAngle(2 * Math.PI + Q)).toBe(1);
+  });
+
+  it('composes with rotateTurns to give a lossless rotation', () => {
+    // 2x3 grid; a ~90° angle rotates losslessly (no resampling).
+    const g = [
+      [1, 2, 3],
+      [4, 5, 6],
     ];
-    const out = rotateCellsByAngle(square, Math.PI / 4);
-    expect(out.length).toBeGreaterThanOrEqual(3);
-    expect(out[0].length).toBeGreaterThanOrEqual(3);
-  });
-
-  it('preserves a solid-color block as a solid (rotated) block at 45°', () => {
-    // 4x4 of one colour: every output cell that gets any coverage at all
-    // should be that colour (no spurious zeros from supersampling jitter).
-    const block: number[][] = Array.from({ length: 4 }, () => [1, 1, 1, 1]);
-    const out = rotateCellsByAngle(block, Math.PI / 4);
-    // At least one painted cell exists in the rotated output.
-    const flat = out.flat();
-    expect(flat.some((c) => c === 1)).toBe(true);
-    // No cell should be a colour we didn't put in.
-    expect(flat.every((c) => c === 0 || c === 1)).toBe(true);
-  });
-
-  it('handles 45° on a centred single painted cell', () => {
-    // 3x3 with a painted centre. After 45° rotation the centre stays the
-    // centre (rotation about the grid centre is identity for the centre
-    // cell), but bbox grows. Centre should still be painted.
-    const cells = [
-      [0, 0, 0],
-      [0, 1, 0],
-      [0, 0, 0],
-    ];
-    const out = rotateCellsByAngle(cells, Math.PI / 4);
-    // The painted cell should be somewhere in the output.
-    expect(out.flat().some((c) => c === 1)).toBe(true);
+    expect(rotateTurns(g, quarterTurnsFromAngle(Q))).toEqual(rotateTurns(g, 1));
+    // An off-axis angle still lands on a crisp quarter turn — never a
+    // scrambled diamond.
+    const out = rotateTurns(g, quarterTurnsFromAngle(Math.PI / 4));
+    expect(out).toEqual(rotateTurns(g, 1));
   });
 });
 

@@ -20,9 +20,9 @@ import {
   placeMotif,
   recolorAreaIndex,
   refitAreaToContent,
+  quarterTurnsFromAngle,
   remapCells,
   repeatFit,
-  rotateCellsByAngle,
   rotateTurns,
   trimCells,
 } from '../project/design';
@@ -554,7 +554,7 @@ function DesignComposer({
   // Pointer interaction on the canvas:
   //  - move: drag the grabbed area; if it's part of the multi-selection, the
   //    whole selection moves by the same offset (offX/offY from the grabbed).
-  //  - rotate: live preview angle that snaps to 45° on release; rotates the
+  //  - rotate: live preview angle that snaps to 90° steps; rotates the
   //    whole selection around its combined centre.
   //  - marquee: a dragged-out rectangle. mode 'mark' makes an empty filter
   //    area (plain drag on empty canvas); mode 'select' rubber-band-selects
@@ -925,16 +925,16 @@ function DesignComposer({
   };
 
   // Rotate the selected areas as a group by an arbitrary angle (radians,
-  // CW positive). Snaps to 45° steps so the handle has 8 stops (0°, 45°,
-  // 90°, 135°, ..., 315°). For 90° multiples the resampler degenerates to
-  // the lossless rotation; for 45° steps each area's cells are resampled
-  // with majority-coverage so square cells "rotate" into a blocky diamond.
-  // Each area's bbox grows to fit its rotated extent.
+  // CW positive). Snaps to 90° steps so the handle has 4 stops (0°, 90°,
+  // 180°, 270°), all lossless: cross-stitch is an axis-aligned square grid,
+  // so only quarter turns map cell-to-cell. Off-axis angles (45° etc.) can't
+  // be represented as clean stitches, so we round to the nearest quarter turn
+  // rather than resample into a scrambled diamond. Each area's bbox swaps
+  // w/h on odd turns.
   const rotateGroupByAngle = (radians: number) => {
-    // Snap to the nearest 45° (π/4).
-    const STEP = Math.PI / 4;
-    const snapped = Math.round(radians / STEP) * STEP;
-    if (Math.abs(snapped) < 1e-6) return; // identity rotation
+    const turns = quarterTurnsFromAngle(radians);
+    if (turns === 0) return; // identity rotation
+    const snapped = turns * (Math.PI / 2);
     const box = selectionBox();
     if (!box) return;
     const ccx = box.x + box.w / 2;
@@ -943,8 +943,9 @@ function DesignComposer({
     const sin = Math.sin(snapped);
     const areas = design.areas.map((a) => {
       if (!selectedIds.has(a.id)) return a;
-      // Rotate each motif's cells (and the repeat's, if any) by the snapped angle.
-      const rotCells = (cells: ColorIndex[][]) => rotateCellsByAngle(cells, snapped);
+      // Rotate each motif's cells (and the repeat's, if any) by whole turns —
+      // lossless, no resampling.
+      const rotCells = (cells: ColorIndex[][]) => rotateTurns(cells, turns);
       const newMotifs = a.motifs.map((m) => {
         const nc = rotCells(m.cells);
         return { ...m, cells: nc, x: 0, y: 0 };
@@ -1354,14 +1355,14 @@ function DesignComposer({
       if (it.erasedAreaIds && moveId) it.erasedAreaIds.add(moveId);
       interactionRef.current = { ...it, lastCx: cx, lastCy: cy };
     } else {
-      // rotate: angle from group centre to pointer. Alt snaps the live
-      // preview to 45° steps (matching the release snap); plain drag is
-      // free preview that then snaps on release.
+      // rotate: angle from group centre to pointer, snapped live to 90° steps
+      // so the preview shows exactly what will commit (cross-stitch only
+      // rotates losslessly in quarter turns — see rotateGroupByAngle).
       const [px, py] = pointerPx(e.clientX, e.clientY);
       const ccx = it.cx * cs;
       const ccy = it.cy * cs;
-      let angle = Math.atan2(py - ccy, px - ccx) + Math.PI / 2; // 0 = pointing up
-      if (e.altKey) angle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+      const raw = Math.atan2(py - ccy, px - ccx) + Math.PI / 2; // 0 = pointing up
+      const angle = Math.round(raw / (Math.PI / 2)) * (Math.PI / 2);
       interactionRef.current = { ...it, angle };
       draw();
     }
@@ -1405,10 +1406,8 @@ function DesignComposer({
       return;
     }
     if (it.kind === 'rotate') {
-      // Snap the free angle to the nearest 45° step (eight stops total).
-      // For 90° multiples this is lossless; 45° / 135° / 225° / 315° trigger
-      // the majority-coverage resampler. A zero snap (identity) just clears
-      // the preview transform.
+      // Snap the free angle to the nearest 90° quarter turn (lossless). A
+      // zero snap (identity) just clears the preview transform.
       rotateGroupByAngle(it.angle);
       draw();
     } else if (it.kind === 'marquee' && it.mode === 'select') {
