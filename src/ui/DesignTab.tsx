@@ -2054,7 +2054,6 @@ function DesignComposer({
   // canvas. Show the whole filtered set — the user asked to see all the
   // search results, not a slice.
   const bottomMotifs = filteredLib;
-  const totalShown = filteredLib.length;
 
   // Drawing tools chunk — passed into ClothBar so it sits inline in the top
   // bar between the project form and the view toggles.
@@ -2274,7 +2273,7 @@ function DesignComposer({
         <span className="design-filter-count">
           {filteredLib.length === 0
             ? 'no matches'
-            : `${totalShown} of ${filteredLib.length}`}
+            : `${filteredLib.length} pattern${filteredLib.length === 1 ? '' : 's'}`}
         </span>
         {anyFilter && (
           <button className="btn-ghost btn-sm" type="button" onClick={clearFilters}>
