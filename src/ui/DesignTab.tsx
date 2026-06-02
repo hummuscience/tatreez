@@ -1151,9 +1151,9 @@ function DesignComposer({
 
   // ----- pointer: select / move / rotate / marquee -----
   // Pointer events instead of mouse events so a fingertip on iPad drives
-  // the same code as a mouse on desktop. Pointers expose `shiftKey/altKey`
-  // too, so modifier-driven behaviour (Shift = additive, Alt = snap) still
-  // works wherever the hardware/OS lets the user trigger them.
+  // the same code as a mouse on desktop. Pointers expose `shiftKey` too, so
+  // Shift = additive selection works wherever the hardware/OS lets the user
+  // trigger it.
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     // Two-finger pinch is handled separately — let the pinch effect see
     // both pointers and skip the selection logic.
@@ -2373,7 +2373,7 @@ function DesignComposer({
             </button>
             <p className="design-canvas-hint">
               Drag on empty canvas to mark an area · drag a pattern on · drag a motif to move · handle
-              rotates (Alt = snap 90°) · Shift + scroll to zoom
+              rotates in 90° steps · Shift + scroll to zoom
             </p>
           </div>
         </div>
