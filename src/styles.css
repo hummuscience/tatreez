@@ -97,6 +97,8 @@ body {
 .tt-foot a { color: var(--accent); text-decoration: none; }
 .tt-foot a:hover { text-decoration: underline; }
 .tt-foot-r { display: flex; gap: 10px; align-items: center; }
+.tt-foot-contact { opacity: 0.9; }
+.tt-foot-contact-ar { font-family: var(--font-arabic); opacity: 0.8; }
 
 /* ============================================================
    PRIMITIVES — buttons, inputs, panels, chips

@@ -231,6 +231,13 @@ export default function App() {
 
       <footer className="tt-foot">
         <span>Tatreez stitch planner — Linen &amp; Thread</span>
+        <span className="tt-foot-contact">
+          Have a suggestion? Email us:{' '}
+          <a href="mailto:muad.abdelhay@gmail.com">muad.abdelhay@gmail.com</a>
+          <span className="tt-foot-contact-ar" dir="rtl" lang="ar">
+            {' · هل لديك اقتراح؟ راسلونا'}
+          </span>
+        </span>
         <span className="tt-foot-r">
           Built with attribution to{' '}
           <a
