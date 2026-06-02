@@ -67,6 +67,17 @@ export function drawPatternBackground(
   ctx.restore();
 }
 
+/**
+ * Draw cell grid lines on `ctx` in grid space (origin at cell 0,0). Minor
+ * lines use `color` at width 1. When `opts.major` (e.g. 10) is set, every
+ * `major`-th line is drawn on top in `opts.majorColor` / `opts.majorWidth`
+ * — the standard cross-stitch chart look. With no `opts` (or `major <= 0`)
+ * the major pass is skipped entirely, so existing callers are unaffected.
+ *
+ * @param opts.major       Interval for thicker/darker major lines (0 = off).
+ * @param opts.majorColor  Stroke colour for major lines. Default rgba(0,0,0,0.22).
+ * @param opts.majorWidth  Line width for major lines. Default 2.
+ */
 export function drawGridLines(
   ctx: CanvasRenderingContext2D,
   cs: number,
@@ -91,6 +102,8 @@ export function drawGridLines(
       ctx.lineWidth = majorWidth;
     }
     for (let i = 0; i <= gridW; i++) {
+      // Draw each line in exactly one pass: major-index lines in the major
+      // pass, all others in the minor pass (XOR of pass and isMajor).
       if ((pass === 'major') !== isMajor(i)) continue;
       ctx.beginPath();
       ctx.moveTo(i * cs, 0);
@@ -98,6 +111,8 @@ export function drawGridLines(
       ctx.stroke();
     }
     for (let i = 0; i <= gridH; i++) {
+      // Draw each line in exactly one pass: major-index lines in the major
+      // pass, all others in the minor pass (XOR of pass and isMajor).
       if ((pass === 'major') !== isMajor(i)) continue;
       ctx.beginPath();
       ctx.moveTo(0, i * cs);
