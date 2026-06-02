@@ -286,48 +286,8 @@ export function flipY(cells: ColorIndex[][]): ColorIndex[][] {
   return cells.slice().reverse();
 }
 
-/**
- * Crop a cell grid to the bounding box of its non-empty (nonzero) cells, so
- * an area drawn around it hugs the visible motif rather than the source
- * chart's blank margins. Returns the trimmed cells; an all-empty grid trims
- * to a single empty cell.
- */
-export function trimCells(cells: ColorIndex[][]): ColorIndex[][] {
-  let top = Infinity;
-  let left = Infinity;
-  let bottom = -1;
-  let right = -1;
-  for (let y = 0; y < cells.length; y++) {
-    for (let x = 0; x < cells[y].length; x++) {
-      if (cells[y][x] > 0) {
-        if (y < top) top = y;
-        if (y > bottom) bottom = y;
-        if (x < left) left = x;
-        if (x > right) right = x;
-      }
-    }
-  }
-  if (bottom < 0) return [[0]]; // nothing painted
-  const out: ColorIndex[][] = [];
-  for (let y = top; y <= bottom; y++) {
-    out.push(cells[y].slice(left, right + 1));
-  }
-  return out;
-}
-
-/**
- * Trim an area to the bounding box of its painted cells, shifting the area's
- * x/y so the remaining stitches stay fixed on the global design grid while
- * w/h shrink. Each motif's local position is re-based against the new origin.
- * Returns null if the area has no painted cells (caller should delete it).
- *
- * Coordinates: a cell painted in motif `m` at local cell (mx,my) lives at
- * area-local (m.x + mx, m.y + my); refitting finds the area-local bounding box
- * of all such painted cells. Areas with a `repeat` are returned unchanged —
- * the eraser can't edit a repeat, so there's nothing to refit.
- */
 /** Compute the painted bounding box of a cell grid in local coords.
- * Returns null if nothing is painted. */
+ *  Returns null if nothing is painted. */
 function cellsBBox(
   cells: ColorIndex[][],
 ): { top: number; left: number; bottom: number; right: number } | null {
@@ -349,6 +309,33 @@ function cellsBBox(
   return bottom < 0 ? null : { top, left, bottom, right };
 }
 
+/**
+ * Crop a cell grid to the bounding box of its non-empty (nonzero) cells, so
+ * an area drawn around it hugs the visible motif rather than the source
+ * chart's blank margins. Returns the trimmed cells; an all-empty grid trims
+ * to a single empty cell.
+ */
+export function trimCells(cells: ColorIndex[][]): ColorIndex[][] {
+  const bb = cellsBBox(cells);
+  if (!bb) return [[0]]; // nothing painted
+  const out: ColorIndex[][] = [];
+  for (let y = bb.top; y <= bb.bottom; y++) {
+    out.push(cells[y].slice(bb.left, bb.right + 1));
+  }
+  return out;
+}
+
+/**
+ * Trim an area to the bounding box of its painted cells, shifting the area's
+ * x/y so the remaining stitches stay fixed on the global design grid while
+ * w/h shrink. Each motif's local position is re-based against the new origin.
+ * Returns null if the area has no painted cells (caller should delete it).
+ *
+ * Coordinates: a cell painted in motif `m` at local cell (mx,my) lives at
+ * area-local (m.x + mx, m.y + my); refitting finds the area-local bounding box
+ * of all such painted cells. Areas with a `repeat` are returned unchanged —
+ * the eraser can't edit a repeat, so there's nothing to refit.
+ */
 export function refitAreaToContent(area: Area): Area | null {
   if (area.repeat) return area;
 

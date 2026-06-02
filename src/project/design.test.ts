@@ -508,7 +508,7 @@ describe('composeBorder', () => {
 
 describe('refitAreaToContent', () => {
   const baseArea = (over: Partial<Area>): Area => ({
-    id: 'a1', name: 'a', x: 0, y: 0, w: 0, h: 0, motifs: [], ...over,
+    id: 'a1', name: 'a', x: 0, y: 0, w: 4, h: 4, motifs: [], ...over,
   });
 
   it('shrinks the box to painted cells and keeps stitches on the global grid', () => {
@@ -572,5 +572,10 @@ describe('refitAreaToContent', () => {
     expect(out.h).toBe(1);
     expect(out.motifs[0].x).toBe(0);
     expect(out.motifs[0].y).toBe(0);
+  });
+
+  it('returns a repeat area unchanged', () => {
+    const area = baseArea({ repeat: { mode: 'horizontal', patternKey: 'k', cells: [[1]] } });
+    expect(refitAreaToContent(area)).toBe(area); // identity, not a copy
   });
 });
