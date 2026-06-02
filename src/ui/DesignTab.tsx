@@ -675,8 +675,9 @@ function DesignComposer({
       ctx.strokeRect(area.x * cs + 0.5, area.y * cs + 0.5, area.w * cs, area.h * cs);
       ctx.restore();
 
-      // Delete (×) button in the top-right corner of a selected area.
-      if (isSelected && !rotating) {
+      // Delete (×) button in the top-right corner of a selected area. Only
+      // under the Select tool — delete (like move/rotate) is a Select action.
+      if (isSelected && !rotating && tool === 'select') {
         const { cx: bx, cy: by } = deleteButtonCenter(area);
         ctx.save();
         ctx.setLineDash([]);
@@ -699,8 +700,9 @@ function DesignComposer({
     }
 
     // One rotate handle for the selection, above the combined bounding box.
+    // Only under the Select tool — rotate is a Select action.
     const selAreas = design.areas.filter((a) => selectedIds.has(a.id));
-    if (selAreas.length > 0 && !rotating) {
+    if (selAreas.length > 0 && !rotating && tool === 'select') {
       const minX = Math.min(...selAreas.map((a) => a.x));
       const minY = Math.min(...selAreas.map((a) => a.y));
       const maxX = Math.max(...selAreas.map((a) => a.x + a.w));
@@ -1195,9 +1197,10 @@ function DesignComposer({
     const touch = e.pointerType !== 'mouse';
 
     // Delete (×) button on a selected area takes priority over everything.
-    // Use a fingertip-sized hit on touch/pen so the delete button is
-    // actually tappable; mouse keeps the precise radius.
-    {
+    // Gated to the Select tool — delete is a Select action (the button is
+    // only drawn under Select too). Use a fingertip-sized hit on touch/pen so
+    // the delete button is actually tappable; mouse keeps the precise radius.
+    if (toolRef.current === 'select') {
       const [px, py] = pointerPx(e.clientX, e.clientY);
       const r = touch ? DELETE_R_TOUCH : DELETE_R + 2;
       for (const a of design.areas) {
@@ -1210,8 +1213,10 @@ function DesignComposer({
       }
     }
 
-    // Rotate handle (on the selection) takes priority over body hits.
-    if (overRotateHandle(e.clientX, e.clientY, e.pointerType)) {
+    // Rotate handle (on the selection) takes priority over body hits. Gated
+    // to the Select tool — rotate is a Select action (the handle is only
+    // drawn under Select too).
+    if (toolRef.current === 'select' && overRotateHandle(e.clientX, e.clientY, e.pointerType)) {
       const box = selectionBox();
       if (box) {
         interactionRef.current = {

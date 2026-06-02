@@ -33,9 +33,8 @@ const SECTIONS: Section[] = [
     title: 'Canvas — placing & moving',
     items: [
       { gesture: 'Tap on empty canvas (motif armed)', what: 'Places the armed motif at the tap point. After placement the Select tool turns on so the next tap can move/refine.' },
-      { gesture: 'Tap or drag on a painted cell', what: 'Selects the area there. Drag continues to move it. Works in any tool — only the painted shape responds, so a stray finger on empty canvas is harmless.' },
-      { gesture: 'Select tool (✥)', what: 'Required ONLY for empty-canvas gestures — marking a new empty area, marquee-grouping motifs, Shift-drag rubber-band. Off by default so a stray iPad pinch can\'t leave a ghost area behind.' },
-      { gesture: 'Rotate handle / × delete', what: 'Always work on a selected area, regardless of tool.' },
+      { gesture: 'Tap on a painted cell', what: 'Selects the area there. Tapping to select works in any tool — only the painted shape responds, so a stray finger on empty canvas is harmless.' },
+      { gesture: 'Select tool (✥)', what: 'Required to MOVE, ROTATE, or DELETE an area — and for empty-canvas gestures (marking a new area, marquee-grouping, Shift-drag rubber-band). With Pen/Eraser active, pressing an area paints/erases instead. The × delete button and rotate handle only appear under Select. Off by default so a stray iPad pinch can\'t leave a ghost area behind.' },
       { gesture: 'Drag on empty canvas (Select on, no motif armed)', what: 'Marks an empty "place a motif here later" area. Only one empty marker at a time — a new mark replaces the previous.' },
       { gesture: 'Drag a box around existing motifs (Select on)', what: 'Multi-selects every area fully enclosed by the rectangle. Rotate / flip / move then acts on the whole group.' },
       { gesture: 'Shift+drag (Select on)', what: 'Rubber-band selects every area the rectangle touches.' },
@@ -56,7 +55,7 @@ const SECTIONS: Section[] = [
       { gesture: 'Rotate handle (above selection)', what: 'Drag the small knob above a selected area. Snaps to 90° steps (0°, 90°, 180°, 270°). Cross-stitch only rotates cleanly in quarter turns, so other angles aren\'t offered — they\'d scramble the stitches.' },
       { gesture: 'Flip', what: 'Use the inspector\'s Flip H / Flip V buttons (open the Inspector panel from the top bar).' },
       { gesture: 'Duplicate', what: 'Cmd/Ctrl+D copies the selection. Cmd/Ctrl+C / +V also works.' },
-      { gesture: 'Delete', what: 'Tap the × button on a selected area, or press Delete/Backspace.' },
+      { gesture: 'Delete', what: 'With the Select tool on, tap the × button on a selected area, or use the inspector\'s Delete button.' },
     ],
   },
   {
