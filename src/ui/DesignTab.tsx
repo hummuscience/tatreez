@@ -19,6 +19,7 @@ import {
   patternPalette,
   placeMotif,
   recolorAreaIndex,
+  refitAreaToContent,
   remapCells,
   repeatFit,
   rotateCellsByAngle,
@@ -569,7 +570,7 @@ function DesignComposer({
     // distance from the anchor to the current pointer.
     | { kind: 'resizeBorder'; areaId: string; axis: 'h' | 'v'; edge: 'lead' | 'trail'; anchor: number }
     // Pen / eraser drag-paint: every pointermove paints the cell it lands on.
-    | { kind: 'paint'; value: ColorIndex; color?: PaletteColor; lastCx: number; lastCy: number };
+    | { kind: 'paint'; value: ColorIndex; color?: PaletteColor; lastCx: number; lastCy: number; erasedAreaIds?: Set<string> };
   const interactionRef = useRef<Interaction | null>(null);
 
   // Canvas fills the residual column width; height follows the cloth aspect
@@ -1187,8 +1188,15 @@ function DesignComposer({
       const [cx, cy] = cellAt(e.clientX, e.clientY);
       const isEraser = toolRef.current === 'eraser';
       const value: ColorIndex = isEraser ? 0 : (1 as ColorIndex); // placeholder; paintCellAt resolves
-      paintCellAt(cx, cy, value, isEraser ? undefined : penColor);
-      interactionRef.current = { kind: 'paint', value, color: isEraser ? undefined : penColor, lastCx: cx, lastCy: cy };
+      const touchedId = paintCellAt(cx, cy, value, isEraser ? undefined : penColor);
+      interactionRef.current = {
+        kind: 'paint',
+        value,
+        color: isEraser ? undefined : penColor,
+        lastCx: cx,
+        lastCy: cy,
+        erasedAreaIds: isEraser && touchedId ? new Set([touchedId]) : undefined,
+      };
       return;
     }
     const additive = e.shiftKey || e.metaKey || e.ctrlKey;
@@ -1339,14 +1347,16 @@ function DesignComposer({
       let err = dx - dy;
       while (true) {
         if (x0 !== it.lastCx || y0 !== it.lastCy) {
-          paintCellAt(x0, y0, it.value, it.color);
+          const fillId = paintCellAt(x0, y0, it.value, it.color);
+          if (it.erasedAreaIds && fillId) it.erasedAreaIds.add(fillId);
         }
         if (x0 === cx && y0 === cy) break;
         const e2 = 2 * err;
         if (e2 > -dy) { err -= dy; x0 += sx; }
         if (e2 < dx) { err += dx; y0 += sy; }
       }
-      paintCellAt(cx, cy, it.value, it.color);
+      const moveId = paintCellAt(cx, cy, it.value, it.color);
+      if (it.erasedAreaIds && moveId) it.erasedAreaIds.add(moveId);
       interactionRef.current = { ...it, lastCx: cx, lastCy: cy };
     } else {
       // rotate: angle from group centre to pointer. Alt snaps the live
@@ -1384,6 +1394,21 @@ function DesignComposer({
     const it = interactionRef.current;
     interactionRef.current = null;
     if (!it) return;
+    if (it.kind === 'paint' && it.erasedAreaIds && it.erasedAreaIds.size > 0) {
+      // Eraser stroke finished: refit each touched area to its painted cells,
+      // dropping any area that was fully erased. Folds into the stroke's
+      // existing undo snapshot (no extra pushUndo).
+      const ids = it.erasedAreaIds;
+      const nextAreas = design.areas
+        .map((a) => (ids.has(a.id) ? refitAreaToContent(a) : a))
+        .filter((a): a is NonNullable<typeof a> => a != null);
+      if (nextAreas.length !== design.areas.length ||
+          nextAreas.some((a, i) => a !== design.areas[i])) {
+        onChange({ ...design, areas: nextAreas });
+      }
+      draw();
+      return;
+    }
     if (it.kind === 'rotate') {
       // Snap the free angle to the nearest 45° step (eight stops total).
       // For 90° multiples this is lossless; 45° / 135° / 225° / 315° trigger
@@ -1576,8 +1601,10 @@ function DesignComposer({
   // The first mutating call of a gesture takes an
   // undo snapshot of the current design. Subsequent calls in the same stroke
   // (drag) don't snapshot again — undo rewinds the whole stroke.
-  const paintCellAt = (cx: number, cy: number, value: ColorIndex, color?: PaletteColor) => {
-    if (cx < 0 || cy < 0 || cx >= design.gridW || cy >= design.gridH) return;
+  const paintCellAt = (
+    cx: number, cy: number, value: ColorIndex, color?: PaletteColor,
+  ): string | undefined => {
+    if (cx < 0 || cy < 0 || cx >= design.gridW || cy >= design.gridH) return undefined;
     // Find the top-most area whose bbox contains the cell. Use bbox here
     // (not painted-cell hit) so erasing inside a motif's existing blank
     // padding still works, and painting inside a motif's blank padding
@@ -1591,7 +1618,7 @@ function DesignComposer({
       }
     }
     // Eraser on empty canvas: no-op.
-    if (targetIdx === -1 && value === 0) return;
+    if (targetIdx === -1 && value === 0) return undefined;
 
     snapshotForGesture();
 
@@ -1618,17 +1645,17 @@ function DesignComposer({
         motifs: [{ patternKey: '__freehand__', x: 0, y: 0, cells: [[writeValue]] }],
       };
       onChange({ ...design, palette: nextPalette, areas: [...design.areas, area] });
-      return;
+      return area.id;
     }
 
     // Edit the top-most area. Borders/repeats are immutable from pen — paint
     // would only affect the displayed strip locally. For now, skip them.
     const a = design.areas[targetIdx];
-    if (a.repeat) return;
+    if (a.repeat) return undefined;
     // No motif yet? On an empty marker area, paint creates a motif inside it
     // — but on the eraser path that's pointless.
     if (a.motifs.length === 0) {
-      if (value === 0) return;
+      if (value === 0) return undefined;
       const cells: ColorIndex[][] = Array.from({ length: a.h }, () => new Array<ColorIndex>(a.w).fill(0));
       cells[cy - a.y][cx - a.x] = writeValue;
       const next: Area = { ...a, motifs: [{ patternKey: '__freehand__', x: 0, y: 0, cells }] };
@@ -1637,7 +1664,7 @@ function DesignComposer({
         palette: nextPalette,
         areas: design.areas.map((x, i) => (i === targetIdx ? next : x)),
       });
-      return;
+      return a.id;
     }
     // Find the motif that owns this cell, or the first one if none does.
     let motifIdx = -1;
@@ -1655,7 +1682,7 @@ function DesignComposer({
     if (motifIdx === -1) {
       // The cell is in the area bbox but outside any motif: extend the top
       // motif's cells to cover it. Pad with zeros where needed.
-      if (value === 0) return;
+      if (value === 0) return undefined;
       motifIdx = a.motifs.length - 1;
     }
     const m = a.motifs[motifIdx];
@@ -1685,6 +1712,7 @@ function DesignComposer({
       palette: nextPalette,
       areas: design.areas.map((x, i) => (i === targetIdx ? { ...a, motifs: nextMotifs } : x)),
     });
+    return a.id;
   };
 
   // ----- place a library motif at a canvas position --------------------------
