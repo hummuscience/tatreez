@@ -600,9 +600,9 @@ function DesignComposer({
     // Long-press candidate: pressed on an area with no tool armed on touch.
     // If the finger stays still ~LONG_PRESS_MS it promotes to a 'move';
     // moving sooner falls through to a 'pan'. `areaId` is the pressed area;
-    // startX/Y the grab client coords; cx0/cy0 the grab cell for the move
-    // offset; scrollLeft/Top for the pan fallback.
-    | { kind: 'pressHold'; areaId: string; startX: number; startY: number; cx0: number; cy0: number; offX: number; offY: number; scrollLeft: number; scrollTop: number; promoted: boolean };
+    // startX/Y the grab client coords; offX/offY the move offset; scrollLeft/
+    // Top for the pan fallback.
+    | { kind: 'pressHold'; areaId: string; startX: number; startY: number; offX: number; offY: number; scrollLeft: number; scrollTop: number };
   const interactionRef = useRef<Interaction | null>(null);
   // Long-press timer (touch move-by-hold). Cleared on move-too-soon / up.
   const pressHoldTimerRef = useRef<number | null>(null);
@@ -1321,13 +1321,10 @@ function DesignComposer({
           areaId: hit.id,
           startX: e.clientX,
           startY: e.clientY,
-          cx0: cx,
-          cy0: cy,
           offX,
           offY,
           scrollLeft: scroll?.scrollLeft ?? 0,
           scrollTop: scroll?.scrollTop ?? 0,
-          promoted: false,
         };
         interactionRef.current = ph;
         if (pressHoldTimerRef.current != null) window.clearTimeout(pressHoldTimerRef.current);
