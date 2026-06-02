@@ -574,9 +574,8 @@ function DesignComposer({
   const interactionRef = useRef<Interaction | null>(null);
 
   // Canvas fills the residual column width; height follows the cloth aspect
-  // ratio. We measure the *displayed* canvas-scroll height (which the CSS
-  // caps at max-height) so the motif arms hug the canvas as actually shown,
-  // not the raw backing height.
+  // ratio. We measure the canvas-wrap's actual width and feed it into the
+  // canvasW/canvasH sizing below.
   useEffect(() => {
     const el = wrapRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
@@ -2415,7 +2414,7 @@ function DesignComposer({
   );
 }
 
-/** A draggable motif thumbnail used in both arms of the L.
+/** A draggable motif thumbnail used in the pattern strip below the canvas.
  *
  * Two placement paths:
  *  - desktop: HTML5 drag-and-drop (onDragStart sets the key, canvas onDrop reads it)
