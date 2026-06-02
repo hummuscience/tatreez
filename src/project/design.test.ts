@@ -10,6 +10,7 @@ import {
   mergePalette,
   placeMotif,
   recolorAreaIndex,
+  refitAreaToContent,
   remapCells,
   repeatFit,
   rotateCW,
@@ -502,5 +503,74 @@ describe('composeBorder', () => {
   it('returns an empty grid for length 0', () => {
     const decomp = { leftCap: [], period: [[1]], rightCap: [] };
     expect(composeBorder(decomp, 0)).toEqual([]);
+  });
+});
+
+describe('refitAreaToContent', () => {
+  const baseArea = (over: Partial<Area>): Area => ({
+    id: 'a1', name: 'a', x: 0, y: 0, w: 0, h: 0, motifs: [], ...over,
+  });
+
+  it('shrinks the box to painted cells and keeps stitches on the global grid', () => {
+    // Area at (10,10) sized 4x4, one motif at local (0,0) with a single
+    // painted cell at local (1,1) → global (11,11).
+    const area = baseArea({
+      x: 10, y: 10, w: 4, h: 4,
+      motifs: [{ patternKey: 'k', x: 0, y: 0, cells: [
+        [0, 0, 0, 0],
+        [0, 1, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+      ] }],
+    });
+    const out = refitAreaToContent(area)!;
+    expect(out.x).toBe(11);
+    expect(out.y).toBe(11);
+    expect(out.w).toBe(1);
+    expect(out.h).toBe(1);
+    // The single stitch is still at global (11,11): area (11,11) + motif (0,0) + cell (0,0).
+    expect(out.motifs[0].x).toBe(0);
+    expect(out.motifs[0].y).toBe(0);
+    expect(out.motifs[0].cells).toEqual([[1]]);
+  });
+
+  it('only shifts the axis with margin', () => {
+    // Painted column 0..1 across full height → trims width only.
+    const area = baseArea({
+      x: 5, y: 7, w: 3, h: 2,
+      motifs: [{ patternKey: 'k', x: 0, y: 0, cells: [
+        [1, 1, 0],
+        [1, 1, 0],
+      ] }],
+    });
+    const out = refitAreaToContent(area)!;
+    expect(out.x).toBe(5);
+    expect(out.y).toBe(7);
+    expect(out.w).toBe(2);
+    expect(out.h).toBe(2);
+  });
+
+  it('returns null when nothing is painted', () => {
+    const area = baseArea({
+      x: 0, y: 0, w: 2, h: 2,
+      motifs: [{ patternKey: 'k', x: 0, y: 0, cells: [[0, 0], [0, 0]] }],
+    });
+    expect(refitAreaToContent(area)).toBeNull();
+  });
+
+  it('accounts for a motif with a non-zero local origin', () => {
+    // Area 6x6 at (0,0); motif placed at local (2,2), one painted cell at
+    // its (0,0) → area-local (2,2), global (2,2).
+    const area = baseArea({
+      x: 0, y: 0, w: 6, h: 6,
+      motifs: [{ patternKey: 'k', x: 2, y: 2, cells: [[1]] }],
+    });
+    const out = refitAreaToContent(area)!;
+    expect(out.x).toBe(2);
+    expect(out.y).toBe(2);
+    expect(out.w).toBe(1);
+    expect(out.h).toBe(1);
+    expect(out.motifs[0].x).toBe(0);
+    expect(out.motifs[0].y).toBe(0);
   });
 });

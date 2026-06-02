@@ -316,6 +316,91 @@ export function trimCells(cells: ColorIndex[][]): ColorIndex[][] {
 }
 
 /**
+ * Trim an area to the bounding box of its painted cells, shifting the area's
+ * x/y so the remaining stitches stay fixed on the global design grid while
+ * w/h shrink. Each motif's local position is re-based against the new origin.
+ * Returns null if the area has no painted cells (caller should delete it).
+ *
+ * Coordinates: a cell painted in motif `m` at local cell (mx,my) lives at
+ * area-local (m.x + mx, m.y + my); refitting finds the area-local bounding box
+ * of all such painted cells. Areas with a `repeat` are returned unchanged —
+ * the eraser can't edit a repeat, so there's nothing to refit.
+ */
+/** Compute the painted bounding box of a cell grid in local coords.
+ * Returns null if nothing is painted. */
+function cellsBBox(
+  cells: ColorIndex[][],
+): { top: number; left: number; bottom: number; right: number } | null {
+  let top = Infinity;
+  let left = Infinity;
+  let bottom = -1;
+  let right = -1;
+  for (let y = 0; y < cells.length; y++) {
+    const row = cells[y];
+    for (let x = 0; x < row.length; x++) {
+      if (row[x] > 0) {
+        if (y < top) top = y;
+        if (y > bottom) bottom = y;
+        if (x < left) left = x;
+        if (x > right) right = x;
+      }
+    }
+  }
+  return bottom < 0 ? null : { top, left, bottom, right };
+}
+
+export function refitAreaToContent(area: Area): Area | null {
+  if (area.repeat) return area;
+
+  // First pass: find the area-local bounding box of all painted cells.
+  let aTop = Infinity;
+  let aLeft = Infinity;
+  let aBottom = -1;
+  let aRight = -1;
+  for (const m of area.motifs) {
+    const bb = cellsBBox(m.cells);
+    if (!bb) continue;
+    const ay = m.y + bb.top;
+    const ax = m.x + bb.left;
+    const ayb = m.y + bb.bottom;
+    const axr = m.x + bb.right;
+    if (ay < aTop) aTop = ay;
+    if (ayb > aBottom) aBottom = ayb;
+    if (ax < aLeft) aLeft = ax;
+    if (axr > aRight) aRight = axr;
+  }
+  if (aBottom < 0) return null; // nothing painted
+
+  // Second pass: trim each motif's cells and rebase its origin.
+  const motifs: PlacedMotif[] = area.motifs.map((m) => {
+    const bb = cellsBBox(m.cells);
+    if (!bb) {
+      // Empty motif: keep as-is but rebase origin.
+      return { ...m, x: m.x - aLeft, y: m.y - aTop };
+    }
+    const trimmedCells: ColorIndex[][] = [];
+    for (let y = bb.top; y <= bb.bottom; y++) {
+      trimmedCells.push(m.cells[y].slice(bb.left, bb.right + 1));
+    }
+    return {
+      ...m,
+      x: m.x + bb.left - aLeft,
+      y: m.y + bb.top - aTop,
+      cells: trimmedCells,
+    };
+  });
+
+  return {
+    ...area,
+    x: area.x + aLeft,
+    y: area.y + aTop,
+    w: aRight - aLeft + 1,
+    h: aBottom - aTop + 1,
+    motifs,
+  };
+}
+
+/**
  * Border decomposition: a pattern split into an optional left cap, the
  * smallest horizontally-repeating unit (the "period"), and an optional
  * right cap. Tiling the period N times between the caps reproduces the
