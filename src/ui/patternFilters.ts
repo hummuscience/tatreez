@@ -184,7 +184,8 @@ export type Category =
   | 'objects'
   | 'architecture'
   | 'amulets'
-  | 'food';
+  | 'food'
+  | 'other';
 
 export interface CategoryDef {
   key: Category;
@@ -257,9 +258,13 @@ export const CATEGORY_RULES: CategoryDef[] = [
   },
 ];
 
-/** [key, label, labelAr] in display order — for rendering the chip row. */
-export const CATEGORY_FILTERS: Array<[Category, string, string]> =
-  CATEGORY_RULES.map((r): [Category, string, string] => [r.key, r.label, r.labelAr]);
+/** [key, label, labelAr] in display order — for rendering the chip row.
+ * "Other" is appended manually: it has no keyword rule (it means "matched
+ * nothing"), so it isn't in CATEGORY_RULES. */
+export const CATEGORY_FILTERS: Array<[Category, string, string]> = [
+  ...CATEGORY_RULES.map((r): [Category, string, string] => [r.key, r.label, r.labelAr]),
+  ['other', 'Other', 'أخرى'],
+];
 
 /**
  * The subject categories a pattern belongs to (possibly empty). Builds the same
@@ -271,4 +276,15 @@ export function categoriesOf(p: Pattern): Category[] {
     .filter(Boolean)
     .join(' ');
   return CATEGORY_RULES.filter((r) => r.re.test(haystack)).map((r) => r.key);
+}
+
+/**
+ * Like {@link categoriesOf}, but a motif that matches no subject rule is
+ * bucketed into `['other']` instead of an empty list — so the "Other" filter
+ * chip surfaces exactly the motifs no keyword rule catches, and nothing is
+ * unreachable when a category filter is active.
+ */
+export function categoriesOfWithOther(p: Pattern): Category[] {
+  const cats = categoriesOf(p);
+  return cats.length > 0 ? cats : ['other'];
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isBorderPattern, isBorderPatternByName, categoriesOf, CATEGORY_RULES, CATEGORY_FILTERS } from './patternFilters';
+import { isBorderPattern, isBorderPatternByName, categoriesOf, categoriesOfWithOther, CATEGORY_RULES, CATEGORY_FILTERS } from './patternFilters';
 import type { Pattern } from '../engine/types';
 
 function pattern(name: string, cells: number[][]): Pattern {
@@ -121,15 +121,36 @@ describe('categoriesOf', () => {
 });
 
 describe('CATEGORY_FILTERS / CATEGORY_RULES', () => {
-  it('exposes all 9 categories in display order', () => {
+  it('exposes all 9 subject categories followed by other in display order', () => {
     expect(CATEGORY_FILTERS.map(([k]) => k)).toEqual([
       'plants', 'animals', 'flowers', 'celestial', 'geometric',
-      'objects', 'architecture', 'amulets', 'food',
+      'objects', 'architecture', 'amulets', 'food', 'other',
     ]);
   });
-  it('has one rule per category', () => {
+  it('CATEGORY_RULES has one rule per subject category (other is not in rules)', () => {
     expect(CATEGORY_RULES.map((r) => r.key).sort()).toEqual(
-      CATEGORY_FILTERS.map(([k]) => k).sort(),
+      ['plants', 'animals', 'flowers', 'celestial', 'geometric',
+       'objects', 'architecture', 'amulets', 'food'].sort(),
     );
+  });
+});
+
+const pat = (name: string): Pattern => ({
+  name, width: 1, height: 1, cells: [[0]], palette: [null],
+});
+
+describe('categoriesOfWithOther', () => {
+  it('returns ["other"] when no subject rule matches', () => {
+    expect(categoriesOfWithOther(pat('Zzz Qabbeh Panel'))).toEqual(['other']);
+  });
+
+  it('returns the matched categories (never other) when something matches', () => {
+    const cats = categoriesOfWithOther(pat('Cypress Tree Sarwa'));
+    expect(cats).toContain('plants');
+    expect(cats).not.toContain('other');
+  });
+
+  it('includes an "other" entry in the filter chip list', () => {
+    expect(CATEGORY_FILTERS.some(([k]) => k === 'other')).toBe(true);
   });
 });

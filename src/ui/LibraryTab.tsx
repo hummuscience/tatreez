@@ -16,7 +16,7 @@ import PatternThumb from './PatternThumb';
 import { parseOxs } from '../oxs/parseOxs';
 import {
   CATEGORY_FILTERS,
-  categoriesOf,
+  categoriesOfWithOther,
   isBorderPattern,
   type Category,
 } from './patternFilters';
@@ -113,7 +113,7 @@ export default function LibraryTab({ onSelect, showToast }: Props) {
         painted,
         size: sizeBucket(p),
         complexity: complexityBucket(painted),
-        cats: categoriesOf(p),
+        cats: categoriesOfWithOther(p),
         isBorder: isBorderPattern(p),
       };
     });
