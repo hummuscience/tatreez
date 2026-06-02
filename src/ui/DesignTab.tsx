@@ -524,6 +524,21 @@ function DesignComposer({
   useEffect(() => {
     try { localStorage.setItem('design:showPatterns', showPatterns ? '1' : '0'); } catch { /* noop */ }
   }, [showPatterns]);
+  // The pattern strip lives below the canvas. When the user turns Patterns ON,
+  // scroll it into view so they see what they just revealed.
+  const stripRef = useRef<HTMLDivElement | null>(null);
+  const togglePatterns = () => {
+    setShowPatterns((v) => {
+      const next = !v;
+      if (next) {
+        // Wait a frame for the strip to mount, then smooth-scroll to it.
+        requestAnimationFrame(() => {
+          stripRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      }
+      return next;
+    });
+  };
   useEffect(() => {
     try { localStorage.setItem('design:showInspector', showInspector ? '1' : '0'); } catch { /* noop */ }
   }, [showInspector]);
@@ -540,6 +555,16 @@ function DesignComposer({
   // size the tray to it. Selecting one auto-filters the library to fit.
   const activeIsEmpty = !!activeArea && activeArea.motifs.length === 0 && !activeArea.repeat;
   const fitsActive = (fitOnly || activeIsEmpty) && activeArea !== null;
+
+  // The inspector floats over the canvas. It auto-shows whenever an area is
+  // selected; the manual toggle (showInspector) is a sticky override for when
+  // nothing is selected. Its × dismisses both: clear the selection and the
+  // override so it fully hides.
+  const inspectorVisible = showInspector || selectedIds.size > 0;
+  const dismissInspector = () => {
+    setShowInspector(false);
+    selectOne(null);
+  };
 
   // Region chips from the loaded library (same source as the Library tab).
   const regions = useMemo(() => {
@@ -2154,7 +2179,7 @@ function DesignComposer({
         onClose={onClose}
         showPatterns={showPatterns}
         showInspector={showInspector}
-        onTogglePatterns={() => setShowPatterns((v) => !v)}
+        onTogglePatterns={togglePatterns}
         onToggleInspector={() => setShowInspector((v) => !v)}
         onFitToContent={fitCanvasToContent}
         onOpenHelp={() => setHelpOpen(true)}
@@ -2291,7 +2316,7 @@ function DesignComposer({
       {/* Full-width canvas + right inspector, then all patterns in a strip below.
           The inspector modifier drops its grid column when the panel is off,
           so the canvas spans the full width. */}
-      <div className={`design-body-l${showPatterns ? '' : ' design-body-l-no-patterns'}${showInspector ? '' : ' design-body-l-no-inspector'}`}>
+      <div className="design-body-l">
         <div className="design-canvas-wrap" ref={wrapRef}>
           {penPickerOpen && (
             <ColorReplacePopover
@@ -2380,52 +2405,63 @@ function DesignComposer({
               rotates in 90° steps · Shift + scroll to zoom
             </p>
           </div>
-        </div>
 
-        {showInspector && (
-          <aside className="design-inspector">
-            <AreaInspector
-              area={activeArea}
-              selectedCount={selectedIds.size}
-              palette={design.palette}
-              libraryNumbers={libraryNumbers}
-              onRecolor={recolorActiveArea}
-              updateArea={updateArea}
-              onRotate={() => rotateGroup(1)}
-              onFlip={(axis) => {
-                const f = axis === 'x' ? flipX : flipY;
-                pushUndo(design);
-                onChange({
-                  ...design,
-                  areas: design.areas.map((a) =>
-                    selectedIds.has(a.id)
-                      ? {
-                          ...a,
-                          motifs: a.motifs.map((m) => ({ ...m, cells: f(m.cells) })),
-                          repeat: a.repeat ? { ...a.repeat, cells: f(a.repeat.cells) } : undefined,
-                        }
-                      : a,
-                  ),
-                });
-              }}
-              onDuplicate={() => duplicateAreas(selectedAreas())}
-              onDeleteArea={() => {
-                pushUndo(design);
-                onChange({ ...design, areas: design.areas.filter((a) => !selectedIds.has(a.id)) });
-                selectOne(null);
-              }}
-              onPlanArea={(area) => {
-                const sub = compositeArea(area, design.palette);
-                onPlanArea(sub, `design:${design.id}:${area.id}`);
-              }}
-            />
-          </aside>
-        )}
+          {/* Inspector floats over the top-right of the canvas (absolute), so
+              showing it never resizes the canvas. Auto-shows on selection. */}
+          {inspectorVisible && (
+            <aside className="design-inspector">
+              <button
+                type="button"
+                className="design-inspector-close"
+                onClick={dismissInspector}
+                title="Close inspector"
+                aria-label="Close inspector"
+              >
+                ✕
+              </button>
+              <AreaInspector
+                area={activeArea}
+                selectedCount={selectedIds.size}
+                palette={design.palette}
+                libraryNumbers={libraryNumbers}
+                onRecolor={recolorActiveArea}
+                updateArea={updateArea}
+                onRotate={() => rotateGroup(1)}
+                onFlip={(axis) => {
+                  const f = axis === 'x' ? flipX : flipY;
+                  pushUndo(design);
+                  onChange({
+                    ...design,
+                    areas: design.areas.map((a) =>
+                      selectedIds.has(a.id)
+                        ? {
+                            ...a,
+                            motifs: a.motifs.map((m) => ({ ...m, cells: f(m.cells) })),
+                            repeat: a.repeat ? { ...a.repeat, cells: f(a.repeat.cells) } : undefined,
+                          }
+                        : a,
+                    ),
+                  });
+                }}
+                onDuplicate={() => duplicateAreas(selectedAreas())}
+                onDeleteArea={() => {
+                  pushUndo(design);
+                  onChange({ ...design, areas: design.areas.filter((a) => !selectedIds.has(a.id)) });
+                  selectOne(null);
+                }}
+                onPlanArea={(area) => {
+                  const sub = compositeArea(area, design.palette);
+                  onPlanArea(sub, `design:${design.id}:${area.id}`);
+                }}
+              />
+            </aside>
+          )}
+        </div>
       </div>
 
       {/* Bottom: full-width rows beneath the whole band, filled left→right. */}
       {showPatterns && bottomMotifs.length > 0 && (
-        <div className="design-motif-strip">
+        <div className="design-motif-strip" ref={stripRef}>
           {bottomMotifs.map((l) => (
             <MotifCard key={l.key} entry={l} armed={armedKey === l.key} onArm={armMotif} />
           ))}
