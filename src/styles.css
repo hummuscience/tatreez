@@ -943,3 +943,12 @@ body {
 @media (max-width: 1099px) {
   .design-canvas-cluster .chip { min-height: 44px; }
 }
+
+/* ---- Tablet --------------------------------------------------------------
+   iPad portrait is 768–834pt and previously fell into the phone rules. The
+   canvas takes the available height; filters and cards scroll beneath it. */
+@media (min-width: 768px) and (max-width: 1099px) {
+  .design-canvas-scroll { max-height: 64vh; }
+  .design-filterbar { position: sticky; top: 0; z-index: 2; }
+  .design-motif-strip .design-lib-card { width: 92px; }
+}

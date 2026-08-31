@@ -2170,134 +2170,6 @@ function DesignComposer({
         onOpenHelp={() => setHelpOpen(true)}
       />
 
-      {/* Filter row: search + compact dropdowns, one line. Hidden when the
-          Patterns library is off — without library cards there's nothing
-          to filter. */}
-      {showPatterns && (
-      <div className="design-filterbar">
-        <label className="filter-search">
-          <SearchIcon />
-          <input
-            type="search"
-            placeholder="Search patterns…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            aria-label="Search patterns"
-          />
-        </label>
-        <div className="design-cat-chips">
-          {CATEGORY_FILTERS.map(([key, label, labelAr]) => (
-            <button
-              key={key}
-              type="button"
-              aria-pressed={fCats.has(key)}
-              className={`chip${fCats.has(key) ? " chip-active" : ""}`}
-              onClick={() =>
-                setFCats((cur) => {
-                  const next = new Set(cur);
-                  if (next.has(key)) next.delete(key);
-                  else next.add(key);
-                  return next;
-                })
-              }
-              title={`${label} · ${labelAr} — ${catCounts[key]} motifs`}
-            >
-              {label} <span dir="rtl" lang="ar" className="chip-ar">{labelAr}</span>{' '}
-              <span className="chip-count">{catCounts[key]}</span>
-            </button>
-          ))}
-        </div>
-
-        {regions.length > 0 && (
-          <select
-            className="design-filter-select"
-            value={fRegion ?? ''}
-            onChange={(e) => setFRegion(e.target.value || null)}
-            aria-label="Region"
-          >
-            <option value="">Region · المنطقة</option>
-            {regions.map(([region, count]) => (
-              <option key={region} value={region}>
-                {regionBilingual(region)} ({count})
-              </option>
-            ))}
-          </select>
-        )}
-
-        <select
-          className="design-filter-select"
-          value={fColors ?? ''}
-          onChange={(e) => setFColors(e.target.value ? (Number(e.target.value) as ColorBucket) : null)}
-          aria-label="Colors"
-        >
-          <option value="">Colors · الألوان</option>
-          {COLOR_BUCKETS.map((n) => (
-            <option key={n} value={n}>
-              {n === 5 ? '5+ colors' : `${n} color${n === 1 ? '' : 's'}`}
-            </option>
-          ))}
-        </select>
-
-        <select
-          className="design-filter-select"
-          value={fSize ?? ''}
-          onChange={(e) => setFSize((e.target.value || null) as SizeBucket | null)}
-          aria-label="Size"
-        >
-          <option value="">Size · الحجم</option>
-          {SIZE_FILTERS.map(([bucket, label]) => (
-            <option key={bucket} value={bucket}>
-              {label}
-            </option>
-          ))}
-        </select>
-
-        <select
-          className="design-filter-select"
-          value={fComplexity ?? ''}
-          onChange={(e) => setFComplexity((e.target.value || null) as ComplexityBucket | null)}
-          aria-label="Complexity"
-        >
-          <option value="">Complexity · التعقيد</option>
-          {COMPLEXITY_FILTERS.map(([bucket, label]) => (
-            <option key={bucket} value={bucket}>
-              {label}
-            </option>
-          ))}
-        </select>
-
-        <label className="design-fit-toggle" title={activeIsEmpty ? 'On automatically for a marked area' : ''}>
-          <input
-            type="checkbox"
-            checked={fitsActive}
-            disabled={!activeArea || activeIsEmpty}
-            onChange={(e) => setFitOnly(e.target.checked)}
-          />
-          Fits area{activeArea ? ` (≲ ${activeArea.w + FIT_TOLERANCE}×${activeArea.h + FIT_TOLERANCE})` : ''}
-        </label>
-
-        <label className="design-fit-toggle" title="Filter to border patterns (sinsal, nafnoof border, etc.)">
-          <input
-            type="checkbox"
-            checked={bordersOnly}
-            onChange={(e) => setBordersOnly(e.target.checked)}
-          />
-          Borders only
-        </label>
-
-        <span className="design-filter-count">
-          {filteredLib.length === 0
-            ? 'no matches'
-            : `${filteredLib.length} pattern${filteredLib.length === 1 ? '' : 's'}`}
-        </span>
-        {anyFilter && (
-          <button className="btn-ghost btn-sm" type="button" onClick={clearFilters}>
-            Clear
-          </button>
-        )}
-      </div>
-      )}
-
       {/* Full-width canvas + right inspector, then all patterns in a strip below.
           The inspector modifier drops its grid column when the panel is off,
           so the canvas spans the full width. */}
@@ -2427,6 +2299,134 @@ function DesignComposer({
           </Sheet>
         </div>
       </div>
+
+      {/* Filter row: search + compact dropdowns, one line. Hidden when the
+          Patterns library is off — without library cards there's nothing
+          to filter. */}
+      {showPatterns && (
+      <div className="design-filterbar">
+        <label className="filter-search">
+          <SearchIcon />
+          <input
+            type="search"
+            placeholder="Search patterns…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label="Search patterns"
+          />
+        </label>
+        <div className="design-cat-chips">
+          {CATEGORY_FILTERS.map(([key, label, labelAr]) => (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={fCats.has(key)}
+              className={`chip${fCats.has(key) ? " chip-active" : ""}`}
+              onClick={() =>
+                setFCats((cur) => {
+                  const next = new Set(cur);
+                  if (next.has(key)) next.delete(key);
+                  else next.add(key);
+                  return next;
+                })
+              }
+              title={`${label} · ${labelAr} — ${catCounts[key]} motifs`}
+            >
+              {label} <span dir="rtl" lang="ar" className="chip-ar">{labelAr}</span>{' '}
+              <span className="chip-count">{catCounts[key]}</span>
+            </button>
+          ))}
+        </div>
+
+        {regions.length > 0 && (
+          <select
+            className="design-filter-select"
+            value={fRegion ?? ''}
+            onChange={(e) => setFRegion(e.target.value || null)}
+            aria-label="Region"
+          >
+            <option value="">Region · المنطقة</option>
+            {regions.map(([region, count]) => (
+              <option key={region} value={region}>
+                {regionBilingual(region)} ({count})
+              </option>
+            ))}
+          </select>
+        )}
+
+        <select
+          className="design-filter-select"
+          value={fColors ?? ''}
+          onChange={(e) => setFColors(e.target.value ? (Number(e.target.value) as ColorBucket) : null)}
+          aria-label="Colors"
+        >
+          <option value="">Colors · الألوان</option>
+          {COLOR_BUCKETS.map((n) => (
+            <option key={n} value={n}>
+              {n === 5 ? '5+ colors' : `${n} color${n === 1 ? '' : 's'}`}
+            </option>
+          ))}
+        </select>
+
+        <select
+          className="design-filter-select"
+          value={fSize ?? ''}
+          onChange={(e) => setFSize((e.target.value || null) as SizeBucket | null)}
+          aria-label="Size"
+        >
+          <option value="">Size · الحجم</option>
+          {SIZE_FILTERS.map(([bucket, label]) => (
+            <option key={bucket} value={bucket}>
+              {label}
+            </option>
+          ))}
+        </select>
+
+        <select
+          className="design-filter-select"
+          value={fComplexity ?? ''}
+          onChange={(e) => setFComplexity((e.target.value || null) as ComplexityBucket | null)}
+          aria-label="Complexity"
+        >
+          <option value="">Complexity · التعقيد</option>
+          {COMPLEXITY_FILTERS.map(([bucket, label]) => (
+            <option key={bucket} value={bucket}>
+              {label}
+            </option>
+          ))}
+        </select>
+
+        <label className="design-fit-toggle" title={activeIsEmpty ? 'On automatically for a marked area' : ''}>
+          <input
+            type="checkbox"
+            checked={fitsActive}
+            disabled={!activeArea || activeIsEmpty}
+            onChange={(e) => setFitOnly(e.target.checked)}
+          />
+          Fits area{activeArea ? ` (≲ ${activeArea.w + FIT_TOLERANCE}×${activeArea.h + FIT_TOLERANCE})` : ''}
+        </label>
+
+        <label className="design-fit-toggle" title="Filter to border patterns (sinsal, nafnoof border, etc.)">
+          <input
+            type="checkbox"
+            checked={bordersOnly}
+            onChange={(e) => setBordersOnly(e.target.checked)}
+          />
+          Borders only
+        </label>
+
+        <span className="design-filter-count">
+          {filteredLib.length === 0
+            ? 'no matches'
+            : `${filteredLib.length} pattern${filteredLib.length === 1 ? '' : 's'}`}
+        </span>
+        {anyFilter && (
+          <button className="btn-ghost btn-sm" type="button" onClick={clearFilters}>
+            Clear
+          </button>
+        )}
+      </div>
+      )}
 
       {/* Bottom: full-width rows beneath the whole band, filled left→right. */}
       {showPatterns && bottomMotifs.length > 0 && (
