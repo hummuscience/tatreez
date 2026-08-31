@@ -39,3 +39,12 @@ coverage/
 handoff/
 
 .superpowers/
+
+# Local secrets — Supabase project URL + anon key, used by the cloud-sync
+# branch (feat/cloud-sync-phase1). Never commit; each machine keeps its own.
+.env
+.env.local
+.env.*.local
+
+# Claude Code local session config
+.claude/
