@@ -20,7 +20,6 @@ import {
   placeMotif,
   recolorAreaIndex,
   refitAreaToContent,
-  quarterTurnsFromAngle,
   remapCells,
   repeatFit,
   rotateTurns,
@@ -46,6 +45,8 @@ import {
   savedPatternKey,
 } from '../storage/storage';
 import PatternThumb from './PatternThumb';
+import MotifBar from './MotifBar';
+import type { Box } from './motifBar';
 import {
   GUTTER,
   cellSize,
@@ -522,6 +523,9 @@ function DesignComposer({
   const [showInspector, setShowInspector] = useState<boolean>(() => {
     try { return localStorage.getItem('design:showInspector') === '1'; } catch { return false; }
   });
+  // Bumped whenever something that affects the bar's on-screen position
+  // changes; selectionBoxCss() is re-read on each render this triggers.
+  const [barTick, setBarTick] = useState(0);
   useEffect(() => {
     try { localStorage.setItem('design:showPatterns', showPatterns ? '1' : '0'); } catch { /* noop */ }
   }, [showPatterns]);
@@ -577,14 +581,11 @@ function DesignComposer({
   // Pointer interaction on the canvas:
   //  - move: drag the grabbed area; if it's part of the multi-selection, the
   //    whole selection moves by the same offset (offX/offY from the grabbed).
-  //  - rotate: live preview angle that snaps to 90° steps; rotates the
-  //    whole selection around its combined centre.
   //  - marquee: a dragged-out rectangle. mode 'mark' makes an empty filter
   //    area (plain drag on empty canvas); mode 'select' rubber-band-selects
   //    every area it touches (Shift+drag on empty canvas).
   type Interaction =
     | { kind: 'move'; areaId: string; offX: number; offY: number }
-    | { kind: 'rotate'; cx: number; cy: number; angle: number }
     | { kind: 'marquee'; mode: 'mark' | 'select'; x0: number; y0: number; x1: number; y1: number }
     // Resize a border by dragging one of its tiling-axis ends. `axis` is the
     // tiling axis (the long side). `edge` is whether we grabbed the leading
@@ -647,21 +648,9 @@ function DesignComposer({
   const canvasH = Math.round((canvasW - GUTTER) * aspect) + GUTTER;
   const cs = cellSize(canvasW - GUTTER, canvasH - GUTTER, design.gridW, design.gridH);
 
-  // Pixel length of the rotate handle's stem above an area.
-  const HANDLE_STEM = 22;
-  // Mouse pointers get a 9px radius (precise); fingertip and pencil get a
-  // much larger one (~30px) because the visible handle is hard to land on
-  // with a fat tip. The drawn knob stays the same; this is invisible slack.
-  const HANDLE_HIT_MOUSE = 9;
-  const HANDLE_HIT_TOUCH = 30;
-  // Radius of the per-area delete (×) button, drawn at the top-right corner.
-  const DELETE_R = 8;
-  const DELETE_R_TOUCH = 22;
-  const deleteButtonCenter = (a: Area) => ({ cx: (a.x + a.w) * cs, cy: a.y * cs });
-
   // ----- rendering -----
   // Drawn imperatively (called from the effect AND from pointer handlers) so
-  // live move/rotate previews, which live in a ref, render at pointer speed
+  // live move/marquee previews, which live in a ref, render at pointer speed
   // without a React state churn per frame.
   const draw = () => {
     const canvas = canvasRef.current;
@@ -681,27 +670,13 @@ function DesignComposer({
 
     const interaction = interactionRef.current;
 
-    // While rotating, the whole selection spins around its combined centre.
-    const rotating = interaction?.kind === 'rotate' ? interaction : null;
-    const groupCenter = rotating ? { x: rotating.cx * cs, y: rotating.cy * cs } : null;
-
     for (const area of design.areas) {
       const isSelected = selectedIds.has(area.id);
       const sub = compositeArea(area, design.palette);
 
       ctx.save();
-      if (rotating && isSelected && groupCenter) {
-        // Rotate the selection as a unit: spin the whole canvas about the
-        // group centre, then draw each selected area in place.
-        ctx.translate(groupCenter.x, groupCenter.y);
-        ctx.rotate(rotating.angle);
-        ctx.translate(-groupCenter.x, -groupCenter.y);
-        ctx.translate(area.x * cs, area.y * cs);
-        drawPatternBackground(ctx, sub, cs);
-      } else {
-        ctx.translate(area.x * cs, area.y * cs);
-        drawPatternBackground(ctx, sub, cs);
-      }
+      ctx.translate(area.x * cs, area.y * cs);
+      drawPatternBackground(ctx, sub, cs);
       ctx.restore();
 
       // area frame — selected areas in accent, others muted
@@ -710,53 +685,6 @@ function DesignComposer({
       ctx.lineWidth = isSelected ? 2 : 1.5;
       ctx.setLineDash([5, 4]);
       ctx.strokeRect(area.x * cs + 0.5, area.y * cs + 0.5, area.w * cs, area.h * cs);
-      ctx.restore();
-
-      // Delete (×) button in the top-right corner of a selected area. Only
-      // under the Select tool — delete (like move/rotate) is a Select action.
-      if (isSelected && !rotating && tool === 'select') {
-        const { cx: bx, cy: by } = deleteButtonCenter(area);
-        ctx.save();
-        ctx.setLineDash([]);
-        ctx.fillStyle = '#b5654a';
-        ctx.beginPath();
-        ctx.arc(bx, by, DELETE_R, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 1.6;
-        ctx.lineCap = 'round';
-        const k = DELETE_R * 0.45;
-        ctx.beginPath();
-        ctx.moveTo(bx - k, by - k);
-        ctx.lineTo(bx + k, by + k);
-        ctx.moveTo(bx + k, by - k);
-        ctx.lineTo(bx - k, by + k);
-        ctx.stroke();
-        ctx.restore();
-      }
-    }
-
-    // One rotate handle for the selection, above the combined bounding box.
-    // Only under the Select tool — rotate is a Select action.
-    const selAreas = design.areas.filter((a) => selectedIds.has(a.id));
-    if (selAreas.length > 0 && !rotating && tool === 'select') {
-      const minX = Math.min(...selAreas.map((a) => a.x));
-      const minY = Math.min(...selAreas.map((a) => a.y));
-      const maxX = Math.max(...selAreas.map((a) => a.x + a.w));
-      const hx = ((minX + maxX) / 2) * cs;
-      const topY = minY * cs;
-      ctx.save();
-      ctx.strokeStyle = '#b5654a';
-      ctx.fillStyle = '#b5654a';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([]);
-      ctx.beginPath();
-      ctx.moveTo(hx, topY);
-      ctx.lineTo(hx, topY - HANDLE_STEM);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(hx, topY - HANDLE_STEM, 5, 0, Math.PI * 2);
-      ctx.fill();
       ctx.restore();
     }
 
@@ -863,21 +791,29 @@ function DesignComposer({
     return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
   };
 
-  // Does the pointer hit the selection's rotate knob (above its bbox)?
-  // `pointerType` is used to grow the invisible hit radius for touch/pen so
-  // a fingertip can actually grab the knob (the rendered knob is small).
-  const overRotateHandle = (
-    clientX: number,
-    clientY: number,
-    pointerType: string = 'mouse',
-  ): boolean => {
-    const box = selectionBox();
-    if (!box) return false;
-    const [px, py] = pointerPx(clientX, clientY);
-    const hx = (box.x + box.w / 2) * cs;
-    const hy = box.y * cs - HANDLE_STEM;
-    const r = pointerType === 'mouse' ? HANDLE_HIT_MOUSE : HANDLE_HIT_TOUCH;
-    return Math.hypot(px - hx, py - hy) <= r;
+  /**
+   * The selection box converted from grid cells into CSS pixels relative to
+   * `.design-canvas-wrap`, which is what MotifBar positions against.
+   *
+   * Three conversions stack here:
+   *   cells → canvas backing px   (GUTTER + cell * cs)
+   *   backing px → CSS px          (the canvas is CSS-scaled; see pointerPx)
+   *   canvas CSS px → wrapper px   (the canvas sits inside a scroll container)
+   */
+  const selectionBoxCss = (): Box | null => {
+    const cells = selectionBox();
+    const canvas = canvasRef.current;
+    const wrap = wrapRef.current;
+    if (!cells || !canvas || !wrap) return null;
+    const cr = canvas.getBoundingClientRect();
+    const wr = wrap.getBoundingClientRect();
+    const scale = cr.width / canvas.width;
+    return {
+      x: cr.left - wr.left + (GUTTER + cells.x * cs) * scale,
+      y: cr.top - wr.top + (GUTTER + cells.y * cs) * scale,
+      w: cells.w * cs * scale,
+      h: cells.h * cs * scale,
+    };
   };
 
   const updateArea = (id: string, fn: (a: Area) => Area) => {
@@ -957,76 +893,6 @@ function DesignComposer({
         ...rotated,
         x: Math.max(0, Math.min(nx, design.gridW - rotated.w)),
         y: Math.max(0, Math.min(ny, design.gridH - rotated.h)),
-      };
-    });
-    pushUndo(design);
-    onChange({ ...design, areas });
-  };
-
-  // Rotate the selected areas as a group by an arbitrary angle (radians,
-  // CW positive). Snaps to 90° steps so the handle has 4 stops (0°, 90°,
-  // 180°, 270°), all lossless: cross-stitch is an axis-aligned square grid,
-  // so only quarter turns map cell-to-cell. Off-axis angles (45° etc.) can't
-  // be represented as clean stitches, so we round to the nearest quarter turn
-  // rather than resample into a scrambled diamond. Each area's bbox swaps
-  // w/h on odd turns.
-  const rotateGroupByAngle = (radians: number) => {
-    const turns = quarterTurnsFromAngle(radians);
-    if (turns === 0) return; // identity rotation
-    const snapped = turns * (Math.PI / 2);
-    const box = selectionBox();
-    if (!box) return;
-    const ccx = box.x + box.w / 2;
-    const ccy = box.y + box.h / 2;
-    const cos = Math.cos(snapped);
-    const sin = Math.sin(snapped);
-    const areas = design.areas.map((a) => {
-      if (!selectedIds.has(a.id)) return a;
-      // Rotate each motif's cells (and the repeat's, if any) by whole turns —
-      // lossless, no resampling.
-      const rotCells = (cells: ColorIndex[][]) => rotateTurns(cells, turns);
-      const newMotifs = a.motifs.map((m) => {
-        const nc = rotCells(m.cells);
-        return { ...m, cells: nc, x: 0, y: 0 };
-      });
-      const newRepeat = a.repeat ? { ...a.repeat, cells: rotCells(a.repeat.cells) } : undefined;
-      // New bbox = max extent across all rotated motif grids.
-      let newW = 0;
-      let newH = 0;
-      for (const m of newMotifs) {
-        if (m.cells.length > newH) newH = m.cells.length;
-        const w = m.cells[0]?.length ?? 0;
-        if (w > newW) newW = w;
-      }
-      if (newRepeat) {
-        if (newRepeat.cells.length > newH) newH = newRepeat.cells.length;
-        const w = newRepeat.cells[0]?.length ?? 0;
-        if (w > newW) newW = w;
-      }
-      if (newW === 0 || newH === 0) {
-        newW = a.w;
-        newH = a.h;
-      }
-      // Re-place the area's centre by rotating its old centre about the
-      // group centre.
-      const acx = a.x + a.w / 2;
-      const acy = a.y + a.h / 2;
-      const dx = acx - ccx;
-      const dy = acy - ccy;
-      const ndx = cos * dx + sin * dy;
-      const ndy = -sin * dx + cos * dy;
-      const nxc = ccx + ndx;
-      const nyc = ccy + ndy;
-      const nx = Math.round(nxc - newW / 2);
-      const ny = Math.round(nyc - newH / 2);
-      return {
-        ...a,
-        x: Math.max(0, Math.min(nx, design.gridW - newW)),
-        y: Math.max(0, Math.min(ny, design.gridH - newH)),
-        w: newW,
-        h: newH,
-        motifs: newMotifs,
-        repeat: newRepeat,
       };
     });
     pushUndo(design);
@@ -1174,21 +1040,7 @@ function DesignComposer({
     return null;
   };
 
-  // Delete one area; skip the confirm for an empty (motif-less) area.
-  const deleteArea = (a: Area) => {
-    const isEmpty = a.motifs.length === 0 && !a.repeat;
-    if (!isEmpty && !confirm(`Delete area "${a.name}"?`)) return;
-    pushUndo(design);
-    onChange({ ...design, areas: design.areas.filter((x) => x.id !== a.id) });
-    setSelectedIds((cur) => {
-      const next = new Set(cur);
-      next.delete(a.id);
-      return next;
-    });
-    if (activeAreaId === a.id) setActiveAreaId(null);
-  };
-
-  // ----- pointer: select / move / rotate / marquee -----
+  // ----- pointer: select / move / marquee -----
   // Pointer events instead of mouse events so a fingertip on iPad drives
   // the same code as a mouse on desktop. Pointers expose `shiftKey` too, so
   // Shift = additive selection works wherever the hardware/OS lets the user
@@ -1231,40 +1083,10 @@ function DesignComposer({
       return;
     }
     const additive = e.shiftKey || e.metaKey || e.ctrlKey;
-    const touch = e.pointerType !== 'mouse';
 
-    // Delete (×) button on a selected area takes priority over everything.
-    // Gated to the Select tool — delete is a Select action (the button is
-    // only drawn under Select too). Use a fingertip-sized hit on touch/pen so
-    // the delete button is actually tappable; mouse keeps the precise radius.
-    if (toolRef.current === 'select') {
-      const [px, py] = pointerPx(e.clientX, e.clientY);
-      const r = touch ? DELETE_R_TOUCH : DELETE_R + 2;
-      for (const a of design.areas) {
-        if (!selectedIds.has(a.id)) continue;
-        const { cx: bx, cy: by } = deleteButtonCenter(a);
-        if (Math.hypot(px - bx, py - by) <= r) {
-          deleteArea(a);
-          return;
-        }
-      }
-    }
-
-    // Rotate handle (on the selection) takes priority over body hits. Gated
-    // to the Select tool — rotate is a Select action (the handle is only
-    // drawn under Select too).
-    if (toolRef.current === 'select' && overRotateHandle(e.clientX, e.clientY, e.pointerType)) {
-      const box = selectionBox();
-      if (box) {
-        interactionRef.current = {
-          kind: 'rotate',
-          cx: box.x + box.w / 2,
-          cy: box.y + box.h / 2,
-          angle: 0,
-        };
-        return;
-      }
-    }
+    // Delete and rotate used to live here as canvas-drawn hit targets, ahead
+    // of everything else in this ladder. They are now real buttons on the
+    // MotifBar, so the pointer ladder starts straight at the border grab.
 
     const [cx, cy] = cellAt(e.clientX, e.clientY);
 
@@ -1464,17 +1286,6 @@ function DesignComposer({
           scroll.scrollTop = it.scrollTop - movedY;
         }
       }
-    } else {
-      // rotate: angle from group centre to pointer, snapped live to 90° steps
-      // so the preview shows exactly what will commit (cross-stitch only
-      // rotates losslessly in quarter turns — see rotateGroupByAngle).
-      const [px, py] = pointerPx(e.clientX, e.clientY);
-      const ccx = it.cx * cs;
-      const ccy = it.cy * cs;
-      const raw = Math.atan2(py - ccy, px - ccx) + Math.PI / 2; // 0 = pointing up
-      const angle = Math.round(raw / (Math.PI / 2)) * (Math.PI / 2);
-      interactionRef.current = { ...it, angle };
-      draw();
     }
   };
 
@@ -1498,6 +1309,9 @@ function DesignComposer({
       return;
     }
     interactionRef.current = null;
+    // Same reason as in onPointerUp: the bar is hidden while an interaction is
+    // in flight, so abandoning one must rerender or it never comes back.
+    setBarTick((t) => t + 1);
     draw();
   };
 
@@ -1509,6 +1323,11 @@ function DesignComposer({
     }
     const it = interactionRef.current;
     interactionRef.current = null;
+    // Re-show the motif bar at the selection's new home. This must run before
+    // every early return below, not at the end of the function: onPointerUp
+    // has several exit paths and a bump placed after them would leave the bar
+    // stuck hidden (interactionRef was already cleared, but nothing rerenders).
+    setBarTick((t) => t + 1);
     if (!it) return;
     if (it.kind === 'paint' && it.erasedAreaIds && it.erasedAreaIds.size > 0) {
       // Eraser stroke finished: refit each touched area to its painted cells,
@@ -1525,12 +1344,7 @@ function DesignComposer({
       draw();
       return;
     }
-    if (it.kind === 'rotate') {
-      // Snap the free angle to the nearest 90° quarter turn (lossless). A
-      // zero snap (identity) just clears the preview transform.
-      rotateGroupByAngle(it.angle);
-      draw();
-    } else if (it.kind === 'marquee' && it.mode === 'select') {
+    if (it.kind === 'marquee' && it.mode === 'select') {
       // Rubber-band: select every area the box touches.
       const x = Math.min(it.x0, it.x1);
       const y = Math.min(it.y0, it.y1);
@@ -2051,6 +1865,19 @@ function DesignComposer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supportsGestureEvents]);
 
+  // Reposition the motif bar on scroll / resize. Zoom and selection changes
+  // already re-render, so they need no extra listener.
+  useEffect(() => {
+    const scroll = canvasScrollRef.current;
+    const bump = () => setBarTick((t) => t + 1);
+    scroll?.addEventListener('scroll', bump, { passive: true });
+    window.addEventListener('resize', bump);
+    return () => {
+      scroll?.removeEventListener('scroll', bump);
+      window.removeEventListener('resize', bump);
+    };
+  }, []);
+
   // Touch listener: preventDefault on multi-touch so iOS doesn't try to
   // page-scroll or double-tap-zoom while the user pinches the canvas. CSS
   // `touch-action: none` doesn't cover this on iOS Safari, which only
@@ -2499,6 +2326,46 @@ function DesignComposer({
               Shift + scroll or pinch to zoom · arm a tool to draw / select
             </p>
           </div>
+
+          {/* Toolbar anchored to the selection. `barTick` is read so this
+              recomputes on scroll/resize; `interactionRef` hides it mid-drag. */}
+          {(() => {
+            void barTick;
+            const box = selectionBoxCss();
+            const wrap = wrapRef.current;
+            return (
+              <MotifBar
+                box={box}
+                viewport={{ w: wrap?.clientWidth ?? 0, h: wrap?.clientHeight ?? 0 }}
+                hidden={interactionRef.current != null || pinchPointersRef.current.size > 0}
+                selectedCount={selectedIds.size}
+                onRotate={() => rotateGroup(1)}
+                onFlip={(axis) => {
+                  const f = axis === 'x' ? flipX : flipY;
+                  pushUndo(design);
+                  onChange({
+                    ...design,
+                    areas: design.areas.map((a) =>
+                      selectedIds.has(a.id)
+                        ? {
+                            ...a,
+                            motifs: a.motifs.map((m) => ({ ...m, cells: f(m.cells) })),
+                            repeat: a.repeat ? { ...a.repeat, cells: f(a.repeat.cells) } : undefined,
+                          }
+                        : a,
+                    ),
+                  });
+                }}
+                onDuplicate={() => duplicateAreas(selectedAreas())}
+                onDelete={() => {
+                  pushUndo(design);
+                  onChange({ ...design, areas: design.areas.filter((a) => !selectedIds.has(a.id)) });
+                  selectOne(null);
+                }}
+                onOpenDetail={() => setShowInspector(true)}
+              />
+            );
+          })()}
 
           {/* Inspector floats over the top-right of the canvas (absolute), so
               showing it never resizes the canvas. Auto-shows on selection. */}
