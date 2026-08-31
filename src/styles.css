@@ -862,3 +862,37 @@ body {
   gap: 6px;
   margin-bottom: 8px;
 }
+
+/* ---- Motif toolbar -------------------------------------------------------
+   Anchored to the selected motif inside .design-canvas-wrap (which is
+   position: relative). Placement is computed in JS by placeMotifBar. */
+.motif-bar {
+  position: absolute;
+  z-index: 12; /* above the inspector's 10 */
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface);
+  border: 1px solid var(--rule-strong, var(--rule));
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow);
+  /* The bar is chrome, not canvas: never let a drag on it pan the canvas. */
+  touch-action: none;
+}
+.motif-bar-btn {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  border-radius: calc(var(--card-radius) - 2px);
+  cursor: pointer;
+}
+.motif-bar-btn:hover { background: var(--accent-tint); }
+.motif-bar-btn:active { background: var(--accent); color: var(--surface); }
+.motif-bar-danger:hover { background: color-mix(in srgb, crimson 14%, transparent); color: crimson; }
