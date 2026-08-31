@@ -45,6 +45,7 @@ import {
 } from '../storage/storage';
 import PatternThumb from './PatternThumb';
 import MotifBar from './MotifBar';
+import Sheet from './Sheet';
 import type { Box } from './motifBar';
 import {
   GUTTER,
@@ -2400,39 +2401,26 @@ function DesignComposer({
             );
           })()}
 
-          {/* Inspector floats over the top-right of the canvas (absolute), so
-              showing it never resizes the canvas. Auto-shows on selection. */}
-          {inspectorVisible && (
-            <aside className="design-inspector">
-              <button
-                type="button"
-                className="design-inspector-close"
-                onClick={dismissInspector}
-                title="Close inspector"
-                aria-label="Close inspector"
-              >
-                ✕
-              </button>
-              <AreaInspector
-                area={activeArea}
-                selectedCount={selectedIds.size}
-                palette={design.palette}
-                libraryNumbers={libraryNumbers}
-                onRecolor={recolorActiveArea}
-                updateArea={updateArea}
-                onDuplicate={() => duplicateAreas(selectedAreas())}
-                onDeleteArea={() => {
-                  pushUndo(design);
-                  onChange({ ...design, areas: design.areas.filter((a) => !selectedIds.has(a.id)) });
-                  selectOne(null);
-                }}
-                onPlanArea={(area) => {
-                  const sub = compositeArea(area, design.palette);
-                  onPlanArea(sub, `design:${design.id}:${area.id}`);
-                }}
-              />
-            </aside>
-          )}
+          <Sheet title="Motif details" open={inspectorVisible} onClose={dismissInspector}>
+            <AreaInspector
+              area={activeArea}
+              selectedCount={selectedIds.size}
+              palette={design.palette}
+              libraryNumbers={libraryNumbers}
+              onRecolor={recolorActiveArea}
+              updateArea={updateArea}
+              onDuplicate={() => duplicateAreas(selectedAreas())}
+              onDeleteArea={() => {
+                pushUndo(design);
+                onChange({ ...design, areas: design.areas.filter((a) => !selectedIds.has(a.id)) });
+                selectOne(null);
+              }}
+              onPlanArea={(area) => {
+                const sub = compositeArea(area, design.palette);
+                onPlanArea(sub, `design:${design.id}:${area.id}`);
+              }}
+            />
+          </Sheet>
         </div>
       </div>
 

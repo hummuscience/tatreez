@@ -532,9 +532,10 @@ body {
 .design-fit-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-soft); white-space: nowrap; }
 
 /* Design body: a single full-width canvas column. The inspector is no longer
-   a grid column — it floats as an overlay on top of the canvas (see
-   .design-inspector below), so showing it never shrinks the canvas. Patterns
-   render in a full-width strip below as a sibling. */
+   a grid column — it opens in the Sheet shell (see .sheet below), a bottom
+   sheet on tablet or a floating corner panel on wide screens, so showing it
+   never shrinks the canvas. Patterns render in a full-width strip below as
+   a sibling. */
 .design-body-l {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -577,44 +578,6 @@ body {
 .btn-bi { display: inline-flex; flex-direction: column; align-items: center; line-height: 1.1; }
 .btn-bi .btn-bi-ar { font-family: var(--font-arabic); font-size: 0.72em; opacity: 0.72; margin-top: 1px; }
 .design-canvas-wrap { position: relative; display: flex; flex-direction: column; gap: 8px; align-items: stretch; min-width: 0; }
-/* Inspector floats over the top-right of the canvas, so revealing it never
-   resizes the canvas. Auto-shows on selection; a × dismisses it. */
-.design-inspector {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 10;
-  width: 280px;
-  max-width: calc(100% - 16px);
-  max-height: calc(100% - 16px);
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 12px;
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: var(--card-radius);
-  box-shadow: var(--shadow);
-}
-.design-inspector-close {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 24px;
-  height: 24px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--rule);
-  border-radius: 50%;
-  background: var(--surface);
-  color: var(--ink-soft);
-  cursor: pointer;
-  font-size: 14px;
-  line-height: 1;
-  z-index: 1;
-}
-.design-inspector-close:hover { color: var(--ink); border-color: var(--rule-strong); }
 /* Drawing tools panel — inline in the cloth bar, between the project form
    controls and the view toggles. */
 .design-tools {
@@ -896,3 +859,51 @@ body {
 .motif-bar-btn:hover { background: var(--accent-tint); }
 .motif-bar-btn:active { background: var(--accent); color: var(--surface); }
 .motif-bar-danger:hover { background: color-mix(in srgb, crimson 14%, transparent); color: crimson; }
+
+/* ---- Sheet ---------------------------------------------------------------
+   Bottom sheet on tablet/phone; a floating corner panel from 1100px up. */
+.sheet {
+  position: absolute;
+  z-index: 14;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 70%;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--card-radius) var(--card-radius) 0 0;
+  box-shadow: var(--shadow);
+}
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--rule);
+}
+.sheet-title { font-family: var(--font-display); font-size: 15px; }
+.sheet-close {
+  min-width: 44px;
+  min-height: 44px;
+  background: none;
+  border: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 15px;
+}
+.sheet-body { overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 16px; }
+
+@media (min-width: 1100px) {
+  .sheet {
+    left: auto;
+    right: 8px;
+    top: 8px;
+    bottom: auto;
+    width: 300px;
+    max-height: calc(100% - 16px);
+    border-radius: var(--card-radius);
+  }
+}
