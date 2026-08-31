@@ -2599,7 +2599,12 @@ function ClothBar({
       >
         {cloth.label} · {design.gridW}×{design.gridH} st ▾
       </button>
-      <Sheet title="Canvas settings" open={open} onClose={() => setOpen(false)}>
+      {/* Mounted here (inside ClothBar's thin header row) rather than in
+          .design-canvas-wrap so `open`/`unit` state stays local. That row
+          is auto-height, so Sheet's default absolute positioning would
+          resolve `bottom/max-height` against ~50px of ancestor — pass
+          viewportAnchored to switch it to position: fixed instead. */}
+      <Sheet title="Canvas settings" open={open} onClose={() => setOpen(false)} viewportAnchored>
         <label className="field field-inline">
           <span>Cloth</span>
           <select

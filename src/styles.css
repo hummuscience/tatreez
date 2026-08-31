@@ -647,7 +647,6 @@ body {
 .design-area-count { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); display: flex; align-items: center; gap: 8px; }
 .design-area-size { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .design-repeat-modes { display: flex; gap: 6px; }
-.design-transform { display: flex; gap: 6px; flex-wrap: wrap; }
 .design-fit-report { font-family: var(--font-mono); font-size: 11px; color: var(--accent); }
 .design-area-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
 
@@ -824,7 +823,7 @@ body {
    position: relative). Placement is computed in JS by placeMotifBar. */
 .motif-bar {
   position: absolute;
-  z-index: 12; /* above the inspector's 10 */
+  z-index: 12; /* below .sheet's 14 */
   display: flex;
   gap: 2px;
   padding: 3px;
@@ -898,5 +897,32 @@ body {
     width: 300px;
     max-height: calc(100% - 16px);
     border-radius: var(--card-radius);
+  }
+}
+
+/* Viewport-anchored variant (Sheet's `viewportAnchored` prop): for a caller
+   whose positioned ancestor is thin/auto-height (e.g. the clothbar header
+   row), where `left/right/bottom: 0` + percentage max-height would resolve
+   against that tiny box instead of the screen. `position: fixed` anchors to
+   the viewport directly, sidestepping the ancestor's size entirely. The
+   default (unset) variant above is untouched, so existing callers — the
+   inspector's Sheet, mounted in the tall .design-canvas-wrap — keep their
+   current, already-correct behaviour unchanged. */
+.sheet-viewport {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: min(70vh, 520px);
+}
+
+@media (min-width: 1100px) {
+  .sheet-viewport {
+    left: auto;
+    right: 16px;
+    top: 16px;
+    bottom: auto;
+    width: 300px;
+    max-height: min(calc(100vh - 32px), 640px);
   }
 }
