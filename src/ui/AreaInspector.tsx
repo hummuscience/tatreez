@@ -25,6 +25,12 @@ export default function AreaInspector({
   onRecolor: (oldIndex: number, color: PaletteColor) => void;
   updateArea: (id: string, fn: (a: Area) => Area) => void;
 } & AreaActions) {
+  // Nothing selected means nothing to inspect. Render nothing at all rather
+  // than a header-only panel: this sits inside a bottom sheet that claims up
+  // to 70% of the canvas on a tablet, and a titled-but-empty panel is pure
+  // chrome over the work surface.
+  if (!area) return null;
+
   // The inspector's old "?" toggle was superseded by the global help modal
   // accessible from the cloth bar's "?" button — keep the header clean here.
   return (
@@ -33,17 +39,15 @@ export default function AreaInspector({
         <span>{selectedCount > 1 ? `${selectedCount} areas` : 'Area'}</span>
         <span dir="rtl">المنطقة</span>
       </div>
-      {area && (
-        <AreaPanel
-          area={area}
-          multi={selectedCount > 1}
-          palette={palette}
-          libraryNumbers={libraryNumbers}
-          onRecolor={onRecolor}
-          updateArea={updateArea}
-          {...actions}
-        />
-      )}
+      <AreaPanel
+        area={area}
+        multi={selectedCount > 1}
+        palette={palette}
+        libraryNumbers={libraryNumbers}
+        onRecolor={onRecolor}
+        updateArea={updateArea}
+        {...actions}
+      />
     </section>
   );
 }

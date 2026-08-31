@@ -394,9 +394,9 @@ function DesignComposer({
   // canvas (pen only). Mutually exclusive with border mode and with each
   // other.
   // `none` is the "do nothing" baseline: no marquee, no area-move, no
-  // create-empty-area. Only the rotate handle and the border-end grab still
-  // fire (those have explicit visual targets, can't be triggered by a stray
-  // touch). This makes pinch-zoom on iPad safe — a stray one-finger drag
+  // create-empty-area. Only the border-end grab still fires (it has an
+  // explicit visual target, can't be triggered by a stray touch). This makes
+  // pinch-zoom on iPad safe — a stray one-finger drag
   // during a pinch can't create a ghost area, because the canvas body
   // ignores it. The user enters Select mode explicitly to manipulate areas.
   type Tool = 'none' | 'select' | 'pen' | 'eraser';
@@ -523,6 +523,22 @@ function DesignComposer({
   const [showInspector, setShowInspector] = useState<boolean>(() => {
     try { return localStorage.getItem('design:showInspector') === '1'; } catch { return false; }
   });
+  // The MotifBar's ⋯ opens the SAME sheet but is a different concept, so it
+  // gets its own state and is deliberately NOT persisted.
+  //
+  //   • the top bar's "Inspector" chip is a standing view preference — a peer
+  //     of "Patterns", meaning "keep the detail panel available". Persisting
+  //     it is what the user asked for by toggling it.
+  //   • ⋯ is a transient act on the motif under your finger: "show me THIS
+  //     one's details, now". Nothing about that says "and every session from
+  //     here on".
+  //
+  // Sharing one persisted flag meant a single ⋯ tap, ever, wrote
+  // design:showInspector=1, and every later launch opened onto a sheet
+  // covering the bottom 70% of the canvas — with nothing selected, so it had
+  // no content either. See also `inspectorVisible` below, which additionally
+  // refuses to render a sheet with no selection to describe.
+  const [detailOpen, setDetailOpen] = useState(false);
   // Bumped whenever something that affects the bar's on-screen position
   // changes; selectionBoxCss() is re-read on each render this triggers.
   const [barTick, setBarTick] = useState(0);
@@ -561,10 +577,26 @@ function DesignComposer({
   const activeIsEmpty = !!activeArea && activeArea.motifs.length === 0 && !activeArea.repeat;
   const fitsActive = (fitOnly || activeIsEmpty) && activeArea !== null;
 
-  // The inspector floats over the canvas, shown only via its manual toggle
-  // (showInspector). Its × turns the toggle off.
-  const inspectorVisible = showInspector;
+  // The detail sheet floats over the canvas. Two independent openers reach it
+  // (the top bar's standing "Inspector" preference and the MotifBar's ⋯), and
+  // either one is enough to show it.
+  //
+  // Both are gated on there actually being a selection: AreaInspector renders
+  // a header-only panel when `area` is null, and an empty sheet eating the
+  // bottom of the canvas is exactly the chrome this layout exists to remove.
+  // So the sheet appears when asked for AND there is something to say.
+  const hasSelection = activeArea != null || selectedIds.size > 0;
+  const inspectorVisible = (showInspector || detailOpen) && hasSelection;
+  // Deselecting ends the ⋯ request that opened the sheet for that motif —
+  // without this, tapping ⋯ once would silently reopen the sheet for every
+  // motif selected afterwards, which is not what a per-motif button means.
+  useEffect(() => {
+    if (!hasSelection) setDetailOpen(false);
+  }, [hasSelection]);
+  // × dismisses whichever opener(s) put it there — otherwise closing a sheet
+  // opened by the chip would spring back open on the next selection.
   const dismissInspector = () => {
+    setDetailOpen(false);
     setShowInspector(false);
   };
 
@@ -797,7 +829,7 @@ function DesignComposer({
    * (`overflow: auto; max-height: 76vh`). That is the box MotifBar clamps and
    * flips against, so it must be measured in the clipping element's space,
    * NOT the wrapper's: `.design-canvas-wrap` is a taller flex column that also
-   * holds the overflow banner and the zoom/hint foot, so a wrapper-relative
+   * holds the overflow banner and the canvas tool cluster, so a wrapper-relative
    * box would let the bar sit outside the visible canvas once the user zooms
    * in and scrolls, and would flip above/below at the wrong threshold.
    *
@@ -1331,6 +1363,10 @@ function DesignComposer({
     clearPressHoldTimer();
     if (pinchPointersRef.current.has(e.pointerId)) {
       endPinch(e);
+      // The bar is hidden while `pinchPointersRef` is non-empty. endPinch drops
+      // this pointer, so the last finger up makes it visible again — but only
+      // if something rerenders to notice. Bump here too, not just below.
+      setBarTick((t) => t + 1);
       return;
     }
     interactionRef.current = null;
@@ -1344,6 +1380,9 @@ function DesignComposer({
     clearPressHoldTimer();
     if (e && pinchPointersRef.current.has(e.pointerId)) {
       endPinch(e);
+      // Same as onPointerCancel: the pinch path returns before the bump below,
+      // so without this the bar stays hidden after the last finger lifts.
+      setBarTick((t) => t + 1);
       return;
     }
     const it = interactionRef.current;
@@ -1493,8 +1532,8 @@ function DesignComposer({
       );
       if (enclosed.length > 0) {
         // Draw-around-motifs gesture: skip creating a frame and multi-select
-        // the captured areas instead. The existing rotate-handle / move /
-        // flip group logic then treats them as a single transformable unit.
+        // the captured areas instead. The existing move / rotate / flip group
+        // logic then treats them as a single transformable unit.
         // Also sweep any leftover empty markers so the canvas stays clean.
         const kept = design.areas.filter((a) => !isEmpty(a));
         if (kept.length !== design.areas.length) {
@@ -2272,7 +2311,7 @@ function DesignComposer({
                   onChange({ ...design, areas: design.areas.filter((a) => !selectedIds.has(a.id)) });
                   selectOne(null);
                 }}
-                onOpenDetail={() => setShowInspector(true)}
+                onOpenDetail={() => setDetailOpen(true)}
               />
             );
           })()}
