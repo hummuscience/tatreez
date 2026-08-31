@@ -793,27 +793,52 @@ function DesignComposer({
 
   /**
    * The selection box converted from grid cells into CSS pixels relative to
-   * `.design-canvas-wrap`, which is what MotifBar positions against.
+   * `.design-canvas-scroll` — the element that actually clips the canvas
+   * (`overflow: auto; max-height: 76vh`). That is the box MotifBar clamps and
+   * flips against, so it must be measured in the clipping element's space,
+   * NOT the wrapper's: `.design-canvas-wrap` is a taller flex column that also
+   * holds the overflow banner and the zoom/hint foot, so a wrapper-relative
+   * box would let the bar sit outside the visible canvas once the user zooms
+   * in and scrolls, and would flip above/below at the wrong threshold.
    *
    * Three conversions stack here:
    *   cells → canvas backing px   (GUTTER + cell * cs)
    *   backing px → CSS px          (the canvas is CSS-scaled; see pointerPx)
-   *   canvas CSS px → wrapper px   (the canvas sits inside a scroll container)
+   *   canvas CSS px → scroll-container px
+   *
+   * Returns null when the selection is scrolled entirely out of the visible
+   * region, so the bar does not render off-canvas. `offset` translates the
+   * result back into wrapper coordinates — the bar is `position: absolute`
+   * inside `.design-canvas-wrap` (the positioned ancestor), while all the
+   * placement decisions happen in scroll-container space.
    */
-  const selectionBoxCss = (): Box | null => {
+  const selectionBoxCss = (): { box: Box; offset: { x: number; y: number } } | null => {
     const cells = selectionBox();
     const canvas = canvasRef.current;
+    const scroll = canvasScrollRef.current;
     const wrap = wrapRef.current;
-    if (!cells || !canvas || !wrap) return null;
+    if (!cells || !canvas || !scroll || !wrap) return null;
     const cr = canvas.getBoundingClientRect();
+    const sr = scroll.getBoundingClientRect();
     const wr = wrap.getBoundingClientRect();
     const scale = cr.width / canvas.width;
-    return {
-      x: cr.left - wr.left + (GUTTER + cells.x * cs) * scale,
-      y: cr.top - wr.top + (GUTTER + cells.y * cs) * scale,
+    const box: Box = {
+      x: cr.left - sr.left + (GUTTER + cells.x * cs) * scale,
+      y: cr.top - sr.top + (GUTTER + cells.y * cs) * scale,
       w: cells.w * cs * scale,
       h: cells.h * cs * scale,
     };
+    // Fully scrolled out of view (above, below, left or right of the clip
+    // rect): no anchor to point at, so draw nothing.
+    if (
+      box.x + box.w <= 0 ||
+      box.y + box.h <= 0 ||
+      box.x >= scroll.clientWidth ||
+      box.y >= scroll.clientHeight
+    ) {
+      return null;
+    }
+    return { box, offset: { x: sr.left - wr.left, y: sr.top - wr.top } };
   };
 
   const updateArea = (id: string, fn: (a: Area) => Area) => {
@@ -2331,12 +2356,15 @@ function DesignComposer({
               recomputes on scroll/resize; `interactionRef` hides it mid-drag. */}
           {(() => {
             void barTick;
-            const box = selectionBoxCss();
-            const wrap = wrapRef.current;
+            const placed = selectionBoxCss();
+            // The scroll container is what clips the canvas, so it — not the
+            // wrapper — defines the bounds the bar clamps and flips against.
+            const scroll = canvasScrollRef.current;
             return (
               <MotifBar
-                box={box}
-                viewport={{ w: wrap?.clientWidth ?? 0, h: wrap?.clientHeight ?? 0 }}
+                box={placed?.box ?? null}
+                offset={placed?.offset}
+                viewport={{ w: scroll?.clientWidth ?? 0, h: scroll?.clientHeight ?? 0 }}
                 hidden={interactionRef.current != null || pinchPointersRef.current.size > 0}
                 selectedCount={selectedIds.size}
                 onRotate={() => rotateGroup(1)}
@@ -2358,6 +2386,12 @@ function DesignComposer({
                 }}
                 onDuplicate={() => duplicateAreas(selectedAreas())}
                 onDelete={() => {
+                  // Confirm before a destructive delete, as everywhere else in
+                  // this tab: ⌫ is a 44px target sitting right next to rotate
+                  // and flip, so a mis-tap on a tablet is easy.
+                  const one = selectedIds.size <= 1 ? selectedAreas()[0] : null;
+                  const msg = one ? `Delete area "${one.name}"?` : 'Delete the selected areas?';
+                  if (!confirm(msg)) return;
                   pushUndo(design);
                   onChange({ ...design, areas: design.areas.filter((a) => !selectedIds.has(a.id)) });
                   selectOne(null);

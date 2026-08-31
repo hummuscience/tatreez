@@ -3,12 +3,19 @@ import { type Box, placeMotifBar } from './motifBar';
 
 export interface MotifBarProps {
   /**
-   * Selection bounding box in CSS pixels, relative to the canvas wrapper,
-   * or null when nothing is selected (the bar renders nothing).
+   * Selection bounding box in CSS pixels, relative to the scrolling canvas
+   * container (the element that clips the canvas), or null when nothing is
+   * selected or the selection is scrolled out of view (renders nothing).
    */
   box: Box | null;
-  /** Wrapper size in CSS px, used to clamp the bar into view. */
+  /** Clipping container size in CSS px, used to clamp the bar into view. */
   viewport: { w: number; h: number };
+  /**
+   * Offset from the clipping container to the positioned ancestor the bar is
+   * absolutely positioned inside. Placement is decided in container space,
+   * then shifted by this to become the `left`/`top` the bar actually uses.
+   */
+  offset?: { x: number; y: number };
   /** True mid-gesture (drag / pinch) so the bar never chases the finger. */
   hidden: boolean;
   /** Number of selected areas — the ⋯ detail button is single-selection only. */
@@ -36,6 +43,7 @@ export interface MotifBarProps {
 export default function MotifBar({
   box,
   viewport,
+  offset,
   hidden,
   selectedCount,
   onRotate,
@@ -60,7 +68,11 @@ export default function MotifBar({
 
   if (!box || hidden) return null;
 
+  // Placed in the clipping container's space (so clamping and the above/below
+  // flip use the real visible bounds), then shifted into the coordinates of
+  // the positioned ancestor the bar renders inside.
   const { left, top } = placeMotifBar(box, size, viewport);
+  const style = { left: left + (offset?.x ?? 0), top: top + (offset?.y ?? 0) };
 
   return (
     <div
@@ -68,7 +80,7 @@ export default function MotifBar({
       className="motif-bar"
       role="toolbar"
       aria-label="Motif actions"
-      style={{ left, top }}
+      style={style}
       // Keep pointer events off the canvas beneath: a tap on the bar must
       // never also register as a canvas press (which would deselect).
       onPointerDown={(e) => e.stopPropagation()}
