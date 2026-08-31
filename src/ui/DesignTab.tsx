@@ -2030,10 +2030,19 @@ function DesignComposer({
   // search results, not a slice.
   const bottomMotifs = filteredLib;
 
-  // Drawing tools chunk — passed into ClothBar so it sits inline in the top
-  // bar between the project form and the view toggles.
-  const toolsNode = (
-    <div className="design-tools" role="toolbar" aria-label="Drawing tools">
+  // Canvas mode cluster — pen/eraser/undo/zoom/border, pinned to a corner of
+  // the canvas itself instead of living in a top bar or a foot band below it.
+  // Rendered inside .design-canvas-wrap, right where the user is working.
+  const clusterNode = (
+    <div
+      className="design-canvas-cluster"
+      role="toolbar"
+      aria-label="Canvas tools"
+      // Keep pointer events off the canvas beneath: a tap on the cluster must
+      // never also register as a canvas press/pan (same reasoning as
+      // MotifBar, which sits in this same positioned ancestor).
+      onPointerDown={(e) => e.stopPropagation()}
+    >
       <button
         type="button"
         className={`chip chip-toggle${tool === 'select' && !borderMode ? ' chip-active' : ''}`}
@@ -2109,6 +2118,37 @@ function DesignComposer({
           <span className="btn-bi-ar" dir="rtl" lang="ar" aria-hidden="true">تراجع</span>
         </span>
       </button>
+      <span className="design-tools-sep" aria-hidden="true" />
+      <div className="design-zoom">
+        <button type="button" className="chip" onClick={() => setZoom((z) => Math.max(0.5, z / 1.2))} title="Zoom out">
+          −
+        </button>
+        <span className="design-zoom-val">{Math.round(zoom * 100)}%</span>
+        <button type="button" className="chip" onClick={() => setZoom((z) => Math.min(4, z * 1.2))} title="Zoom in">
+          +
+        </button>
+        <button type="button" className="chip" onClick={() => setZoom(1)} title="Fit width">
+          <span className="btn-bi">
+            Fit
+            <span className="btn-bi-ar" dir="rtl" lang="ar" aria-hidden="true">ملاءمة</span>
+          </span>
+        </button>
+      </div>
+      {/* Border tool: requires an armed library motif. When on, dragging
+          across the canvas tiles that motif along the drag axis. */}
+      <button
+        type="button"
+        className={`chip chip-toggle${borderMode ? ' chip-active' : ''}`}
+        aria-pressed={borderMode}
+        disabled={!armedKey}
+        onClick={() => setBorderMode((v) => !v)}
+        title={armedKey ? 'Tile the armed motif along a drag' : 'Arm a pattern first to draw a border'}
+      >
+        <span className="btn-bi">
+          {borderMode ? 'Border ✓' : '+ Border'}
+          <span className="btn-bi-ar" dir="rtl" lang="ar" aria-hidden="true">حاشية</span>
+        </span>
+      </button>
     </div>
   );
 
@@ -2128,7 +2168,6 @@ function DesignComposer({
         onToggleInspector={() => setShowInspector((v) => !v)}
         onFitToContent={fitCanvasToContent}
         onOpenHelp={() => setHelpOpen(true)}
-        tools={toolsNode}
       />
 
       {/* Filter row: search + compact dropdowns, one line. Hidden when the
@@ -2315,42 +2354,7 @@ function DesignComposer({
               onDrop={onDrop}
             />
           </div>
-          <div className="design-canvas-foot">
-            <div className="design-zoom">
-              <button type="button" className="chip" onClick={() => setZoom((z) => Math.max(0.5, z / 1.2))} title="Zoom out">
-                −
-              </button>
-              <span className="design-zoom-val">{Math.round(zoom * 100)}%</span>
-              <button type="button" className="chip" onClick={() => setZoom((z) => Math.min(4, z * 1.2))} title="Zoom in">
-                +
-              </button>
-              <button type="button" className="chip" onClick={() => setZoom(1)} title="Fit width">
-                <span className="btn-bi">
-                  Fit
-                  <span className="btn-bi-ar" dir="rtl" lang="ar" aria-hidden="true">ملاءمة</span>
-                </span>
-              </button>
-            </div>
-            {/* Border tool: requires an armed library motif. When on, dragging
-                across the canvas tiles that motif along the drag axis. */}
-            <button
-              type="button"
-              className={`chip chip-toggle${borderMode ? ' chip-active' : ''}`}
-              aria-pressed={borderMode}
-              disabled={!armedKey}
-              onClick={() => setBorderMode((v) => !v)}
-              title={armedKey ? 'Tile the armed motif along a drag' : 'Arm a pattern first to draw a border'}
-            >
-              <span className="btn-bi">
-                {borderMode ? 'Border ✓' : '+ Border'}
-                <span className="btn-bi-ar" dir="rtl" lang="ar" aria-hidden="true">حاشية</span>
-              </span>
-            </button>
-            <p className="design-canvas-hint">
-              Drag to pan · press &amp; hold a pattern to move it (or click-drag on desktop) ·
-              Shift + scroll or pinch to zoom · arm a tool to draw / select
-            </p>
-          </div>
+          {clusterNode}
 
           {/* Toolbar anchored to the selection. `barTick` is read so this
               recomputes on scroll/resize; `interactionRef` hides it mid-drag. */}
@@ -2514,7 +2518,6 @@ function ClothBar({
   onToggleInspector,
   onFitToContent,
   onOpenHelp,
-  tools,
 }: {
   design: Design;
   onChange: (d: Design) => void;
@@ -2525,9 +2528,6 @@ function ClothBar({
   onToggleInspector: () => void;
   onFitToContent: () => void;
   onOpenHelp: () => void;
-  /** Drawing tools panel (Pen/Eraser/Undo) — sits between the form and the
-   * view toggles. Rendered by the parent so it can keep its own state. */
-  tools?: React.ReactNode;
 }) {
   const cloth = getCloth(design.clothId);
   const hasContent = design.areas.some((a) => a.motifs.length > 0 || a.repeat);
@@ -2687,7 +2687,6 @@ function ClothBar({
           </button>
         )}
       </Sheet>
-      {tools}
       {/* View toggles: right-aligned, always visible in either open or
           collapsed state so panels can be revealed before the user touches
           the project settings. */}

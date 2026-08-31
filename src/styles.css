@@ -571,19 +571,6 @@ body {
 .btn-bi { display: inline-flex; flex-direction: column; align-items: center; line-height: 1.1; }
 .btn-bi .btn-bi-ar { font-family: var(--font-arabic); font-size: 0.72em; opacity: 0.72; margin-top: 1px; }
 .design-canvas-wrap { position: relative; display: flex; flex-direction: column; gap: 8px; align-items: stretch; min-width: 0; }
-/* Drawing tools panel — inline in the cloth bar, between the project form
-   controls and the view toggles. */
-.design-tools {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  background: var(--surface-deep);
-  border: 1px solid var(--rule);
-  border-radius: var(--card-radius);
-  align-self: center;
-  flex-wrap: wrap;
-}
 .design-tools-sep {
   display: inline-block;
   width: 1px;
@@ -617,7 +604,8 @@ body {
 
 /* The canvas backing px = wrapW × zoom, so it renders 1:1 (no CSS scaling):
    at 100% it fills the column; zoomed in it overflows and the inner scroll
-   container scrolls. The foot (zoom + hint) stays fixed below it. */
+   container scrolls. The tool cluster (see .design-canvas-cluster) floats
+   over it rather than sitting in a fixed band below. */
 .design-canvas-scroll { overflow: auto; max-height: 76vh; }
 .design-canvas {
   display: block;
@@ -637,11 +625,9 @@ body {
 .design-canvas-pan { cursor: grab; }
 .design-canvas-pan:active { cursor: grabbing; }
 .design-lib-card-armed { border-color: var(--accent); background: var(--accent-tint); box-shadow: 0 0 0 2px var(--accent) inset; }
-.design-canvas-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .design-zoom { display: flex; align-items: center; gap: 6px; }
 .design-zoom .chip { padding: 2px 9px; min-width: 26px; }
 .design-zoom-val { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); min-width: 38px; text-align: center; }
-.design-canvas-hint { font-family: var(--font-mono); font-size: 10px; color: var(--ink-soft); text-align: right; flex: 1 1 240px; }
 
 .design-area { display: flex; flex-direction: column; gap: 10px; }
 .design-area-count { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); display: flex; align-items: center; gap: 8px; }
@@ -907,7 +893,13 @@ body {
    the viewport directly, sidestepping the ancestor's size entirely. The
    default (unset) variant above is untouched, so existing callers — the
    inspector's Sheet, mounted in the tall .design-canvas-wrap — keep their
-   current, already-correct behaviour unchanged. */
+   current, already-correct behaviour unchanged.
+
+   NOTE: this rule wins over `.sheet`'s `position: absolute` on cascade
+   order alone — both are single-class selectors of equal specificity, and
+   this one simply appears later in the file. Keep it after `.sheet`; if the
+   two are ever reordered, `position: fixed` silently reverts to `absolute`
+   and the canvas-settings sheet breaks on tablet with no error. */
 .sheet-viewport {
   position: fixed;
   left: 0;
@@ -925,4 +917,29 @@ body {
     width: 300px;
     max-height: min(calc(100vh - 32px), 640px);
   }
+}
+
+/* ---- Canvas tool cluster -------------------------------------------------
+   Pen/eraser/undo/zoom/border, pinned to the canvas corner. Undo lives here
+   rather than on MotifBar because it is global: it reverses the last edit
+   whatever it was, including creating the motif a per-motif bar sits on. */
+.design-canvas-cluster {
+  position: absolute;
+  z-index: 11;
+  left: 8px;
+  bottom: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100% - 16px);
+  padding: 4px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border: 1px solid var(--rule);
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow);
+  touch-action: none;
+}
+@media (max-width: 1099px) {
+  .design-canvas-cluster .chip { min-height: 44px; }
 }
