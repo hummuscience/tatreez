@@ -2530,7 +2530,6 @@ function ClothBar({
   tools?: React.ReactNode;
 }) {
   const cloth = getCloth(design.clothId);
-  const strands = STRAND_OPTIONS.find((s) => s.id === design.strandsId);
   const hasContent = design.areas.some((a) => a.motifs.length > 0 || a.repeat);
   // Collapsed by default — once cloth/size/strands are picked the user mostly
   // works with the canvas. Persisted so an intentional open survives refresh.
@@ -2591,127 +2590,98 @@ function ClothBar({
           if (!e.target.value.trim()) onChange({ ...design, name: 'Untitled design' });
         }}
       />
-      {!open && (
-        // Compact summary: read-only chip of the current cloth/size/strands,
-        // with one button to re-expand the full form.
-        <>
-          <span className="design-clothbar-summary">
-            {cloth.label} · {design.widthCm}×{design.heightCm} cm · {design.gridW}×{design.gridH} st
-            {strands ? ` · ${strands.label}` : ''}
-          </span>
+      <button
+        type="button"
+        className="btn-ghost btn-sm"
+        onClick={() => setOpen(true)}
+        title="Cloth, size, strands"
+        aria-label="Canvas settings"
+      >
+        {cloth.label} · {design.gridW}×{design.gridH} st ▾
+      </button>
+      <Sheet title="Canvas settings" open={open} onClose={() => setOpen(false)}>
+        <label className="field field-inline">
+          <span>Cloth</span>
+          <select
+            value={design.clothId}
+            onChange={(e) => {
+              const c = getCloth(e.target.value);
+              onChange({
+                ...design,
+                clothId: e.target.value,
+                gridW: cmToCells(design.widthCm, c),
+                gridH: cmToCells(design.heightCm, c),
+              });
+            }}
+          >
+            {CLOTH_OPTIONS.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field field-inline">
+          <span>Unit</span>
+          <select value={unit} onChange={(e) => setUnit(e.target.value as SizeUnit)}>
+            <option value="cm">cm</option>
+            <option value="in">inches</option>
+            <option value="st">stitches</option>
+          </select>
+        </label>
+        <label className="field field-inline">
+          <span>Width ({unit})</span>
+          <input
+            type="number"
+            min={1}
+            step={unit === 'st' ? 1 : 0.1}
+            value={displayW}
+            onChange={(e) => {
+              const v = Math.max(1, Number(e.target.value) || 1);
+              onChange({ ...design, widthCm: toCm(v), gridW: toCells(v) });
+            }}
+          />
+        </label>
+        <label className="field field-inline">
+          <span>Height ({unit})</span>
+          <input
+            type="number"
+            min={1}
+            step={unit === 'st' ? 1 : 0.1}
+            value={displayH}
+            onChange={(e) => {
+              const v = Math.max(1, Number(e.target.value) || 1);
+              onChange({ ...design, heightCm: toCm(v), gridH: toCells(v) });
+            }}
+          />
+        </label>
+        <label className="field field-inline">
+          <span>Strands</span>
+          <select
+            value={design.strandsId}
+            onChange={(e) => onChange({ ...design, strandsId: e.target.value })}
+          >
+            {STRAND_OPTIONS.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span className="design-clothbar-meta">
+          {design.gridW}×{design.gridH} stitches
+        </span>
+        {hasContent && (
           <button
             type="button"
             className="btn-ghost btn-sm"
-            onClick={() => setOpen(true)}
-            title="Edit cloth, size, strands"
+            onClick={onFitToContent}
+            title="Shrink the canvas to a tight fit around the placed patterns"
           >
-            Edit
+            Fit to content
           </button>
-          {hasContent && (
-            <button
-              type="button"
-              className="btn-ghost btn-sm"
-              onClick={onFitToContent}
-              title="Shrink the canvas to a tight fit around the placed patterns"
-            >
-              Fit to content
-            </button>
-          )}
-        </>
-      )}
-      {open && (
-        <>
-          <label className="field field-inline">
-            <span>Cloth</span>
-            <select
-              value={design.clothId}
-              onChange={(e) => {
-                const c = getCloth(e.target.value);
-                onChange({
-                  ...design,
-                  clothId: e.target.value,
-                  gridW: cmToCells(design.widthCm, c),
-                  gridH: cmToCells(design.heightCm, c),
-                });
-              }}
-            >
-              {CLOTH_OPTIONS.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field field-inline">
-            <span>Unit</span>
-            <select value={unit} onChange={(e) => setUnit(e.target.value as SizeUnit)}>
-              <option value="cm">cm</option>
-              <option value="in">inches</option>
-              <option value="st">stitches</option>
-            </select>
-          </label>
-          <label className="field field-inline">
-            <span>Width ({unit})</span>
-            <input
-              type="number"
-              min={1}
-              step={unit === 'st' ? 1 : 0.1}
-              value={displayW}
-              onChange={(e) => {
-                const v = Math.max(1, Number(e.target.value) || 1);
-                onChange({ ...design, widthCm: toCm(v), gridW: toCells(v) });
-              }}
-            />
-          </label>
-          <label className="field field-inline">
-            <span>Height ({unit})</span>
-            <input
-              type="number"
-              min={1}
-              step={unit === 'st' ? 1 : 0.1}
-              value={displayH}
-              onChange={(e) => {
-                const v = Math.max(1, Number(e.target.value) || 1);
-                onChange({ ...design, heightCm: toCm(v), gridH: toCells(v) });
-              }}
-            />
-          </label>
-          <label className="field field-inline">
-            <span>Strands</span>
-            <select
-              value={design.strandsId}
-              onChange={(e) => onChange({ ...design, strandsId: e.target.value })}
-            >
-              {STRAND_OPTIONS.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <span className="design-clothbar-meta">
-            {design.gridW}×{design.gridH} stitches
-          </span>
-          {hasContent && (
-            <button
-              type="button"
-              className="btn-ghost btn-sm"
-              onClick={onFitToContent}
-              title="Shrink the canvas to a tight fit around the placed patterns"
-            >
-              Fit to content
-            </button>
-          )}
-          <button
-            type="button"
-            className="btn-ghost btn-sm"
-            onClick={() => setOpen(false)}
-            title="Collapse"
-          >
-            Done
-          </button>
-        </>
-      )}
+        )}
+      </Sheet>
       {tools}
       {/* View toggles: right-aligned, always visible in either open or
           collapsed state so panels can be revealed before the user touches

@@ -407,8 +407,11 @@ body {
 /* composer: top cloth bar + 3-col body */
 .design-composer { display: flex; flex-direction: column; gap: 16px; }
 
-/* cloth bar — the first choice, full width across the top */
-.design-clothbar { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 16px; border: 1px solid var(--rule); border-radius: var(--card-radius); padding: 12px 16px; background: var(--surface); }
+/* cloth bar — the first choice, full width across the top. Now a thin row:
+   back, name, and a disclosure that opens canvas settings in a Sheet.
+   position: relative so that Sheet (position: absolute) anchors here
+   instead of escaping to the page. */
+.design-clothbar { position: relative; display: flex; align-items: center; flex-wrap: wrap; gap: 16px; border: 1px solid var(--rule); border-radius: var(--card-radius); padding: 8px 16px; background: var(--surface); }
 .design-clothbar-name { font-family: var(--font-display); font-size: 20px; font-weight: var(--display-weight); align-self: center; margin-right: auto; }
 /* Inline-editable design name. Borderless until hover/focus so it reads as
    a title, but invites editing on interaction. */
@@ -427,16 +430,6 @@ body {
 }
 .design-clothbar-name-input:hover { border-color: var(--rule); }
 .design-clothbar-name-input:focus { border-color: var(--accent); background: var(--surface-deep); outline: none; }
-/* One-line read-only summary shown when the cloth bar is collapsed. */
-.design-clothbar-summary {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--ink-soft);
-  align-self: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 /* View toggle group lives at the right end of the cloth bar. */
 .design-clothbar-views { display: inline-flex; gap: 6px; align-items: center; margin-left: auto; }
 /* Overflow banner — appears when a placed motif's natural size exceeds the
